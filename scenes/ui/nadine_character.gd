@@ -29,6 +29,25 @@ var _anim_time: float = 0.0
 var _target_x: float = 0.0
 var _is_moving: bool = false
 var _facing_right: bool = true
+var _home_x: float = 0.0
+var _working_tool: String = "" # "duct_tape" / "wrench" while fixing something
+var _cheer_timer: float = 0.0
+var walk_speed: float = 420.0
+
+## Optional painted sprites (res://assets/art/): nadine_idle, nadine_run_1..3, nadine_tape,
+## nadine_wrench, nadine_cheer — transparent, one shared canvas, feet on the same baseline, facing
+## right. When nadine_idle.png exists she becomes an AnimatedSprite2D everywhere she appears;
+## otherwise she is drawn in code (the original look).
+const ANIMS: Dictionary = {
+	"idle": ["nadine_idle"],
+	"run": ["nadine_run_1", "nadine_run_2", "nadine_run_3"],
+	"tape": ["nadine_tape"],
+	"wrench": ["nadine_wrench"],
+	"cheer": ["nadine_cheer"]
+}
+var _sprite: AnimatedSprite2D
+var _sprite_used_rect: Rect2 = Rect2()
+var _sprite_tex_w: float = 0.0
 
 const SKIN_COLOR := Color(0.55, 0.34, 0.21)
 const SKIN_SHADOW := Color(0.44, 0.26, 0.15)
@@ -42,6 +61,92 @@ const OUTLINE := Color(0.08, 0.05, 0.12)
 
 func _ready() -> void:
 	_target_x = position.x
+	_home_x = position.x
+	_try_load_sprites()
+
+func uses_sprites() -> bool:
+	return _sprite != null
+
+func _try_load_sprites() -> void:
+	var idle_tex: Texture2D = ArtLib.tex("nadine_idle")
+	if idle_tex == null:
+		return
+	var frames := SpriteFrames.new()
+	for anim in ANIMS.keys():
+		var names: Array = ANIMS[anim]
+		var added: int = 0
+		if not frames.has_animation(anim):
+			frames.add_animation(anim)
+		frames.set_animation_loop(anim, true)
+		frames.set_animation_speed(anim, 10.0 if anim == "run" else 4.0)
+		for n in names:
+			var t: Texture2D = ArtLib.tex(String(n))
+			if t != null:
+				frames.add_frame(anim, t)
+				added += 1
+		if added == 0:
+			frames.add_frame(anim, idle_tex)
+	if frames.has_animation("default"):
+		frames.remove_animation("default")
+	_sprite_tex_w = float(idle_tex.get_width())
+	_sprite_used_rect = ArtLib.used_rect(idle_tex)
+	_sprite = AnimatedSprite2D.new()
+	_sprite.sprite_frames = frames
+	_sprite.centered = false
+	_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	add_child(_sprite)
+	_sprite.play("idle")
+	_update_sprite()
+
+func _sprite_anim_name() -> String:
+	if _cheer_timer > 0.0 or pose == Pose.RESULTS_THUMBS_UP:
+		return "cheer"
+	if pose == Pose.GAMEPLAY_RUN or _is_moving:
+		return "run"
+	if _working_tool == "duct_tape":
+		return "tape"
+	if _working_tool == "wrench":
+		return "wrench"
+	return "idle"
+
+func get_current_animation() -> String:
+	return _sprite.animation if _sprite != null else _sprite_anim_name()
+
+func _update_sprite() -> void:
+	if _sprite == null:
+		return
+	var anim: String = _sprite_anim_name()
+	if _sprite.animation != anim:
+		_sprite.play(anim)
+	var s: float = character_scale
+	var target_h: float = 262.0 * s
+	var sc: float = target_h / maxf(1.0, _sprite_used_rect.size.y)
+	var bob: float = 0.0
+	if anim == "run":
+		bob = -absf(sin(_anim_time * 11.0)) * 6.0 * s
+	elif _working_tool != "":
+		bob = sin(_anim_time * 9.0) * 3.0 * s
+	else:
+		bob = sin(_anim_time * 3.2) * 4.0 * s # idle bob
+	_sprite.flip_h = not _facing_right
+	var cx: float = _sprite_used_rect.get_center().x
+	if _sprite.flip_h:
+		cx = _sprite_tex_w - cx
+	_sprite.scale = Vector2(sc, sc)
+	_sprite.position = Vector2(-cx * sc, 138.0 * s - _sprite_used_rect.end.y * sc + bob)
+
+func is_moving() -> bool:
+	return _is_moving
+
+func set_home_x(x: float) -> void:
+	_home_x = x
+
+func get_home_x() -> float:
+	return _home_x
+
+## Walks (slides) Nadine along the floor to x. Kept as move_to_x for older callers.
+func walk_to_x(target_x: float) -> void:
+	move_to_x(target_x)
 
 func move_to_x(target_x: float) -> void:
 	_target_x = target_x
@@ -50,8 +155,29 @@ func move_to_x(target_x: float) -> void:
 		_is_moving = true
 		pose = Pose.GAMEPLAY_RUN
 
+func face_towards(x: float) -> void:
+	if absf(x - position.x) > 4.0:
+		_facing_right = x >= position.x
+		queue_redraw()
+
+## Shows Nadine working on a malfunction with a tool ("" = stop working).
+func set_working(tool_id: String) -> void:
+	_working_tool = tool_id
+	if tool_id != "":
+		held_tool_id = tool_id
+	queue_redraw()
+
+func is_working() -> bool:
+	return _working_tool != ""
+
+func cheer(duration_sec: float = 1.2) -> void:
+	_cheer_timer = duration_sec
+	_working_tool = ""
+
 func _process(delta: float) -> void:
 	_anim_time += delta
+	if _cheer_timer > 0.0:
+		_cheer_timer -= delta
 	if _is_moving:
 		var diff: float = _target_x - position.x
 		if absf(diff) <= 6.0:
@@ -60,14 +186,23 @@ func _process(delta: float) -> void:
 			if pose == Pose.GAMEPLAY_RUN:
 				pose = Pose.GAMEPLAY_STAND
 		else:
-			position.x += signf(diff) * minf(absf(diff), 340.0 * delta)
+			# ease in/out: quicker over long distances, gentle as she arrives
+			var spd: float = clampf(absf(diff) * 4.0, 160.0, walk_speed)
+			position.x += signf(diff) * minf(absf(diff), spd * delta)
+	_update_sprite()
 	queue_redraw()
 
 func _draw() -> void:
 	var s: float = character_scale
-	var bob: float = sin(_anim_time * (11.0 if pose == Pose.GAMEPLAY_RUN else 3.2)) * (5.0 if pose == Pose.GAMEPLAY_RUN else 2.2) * s
+	if _sprite != null:
+		# Painted sprite does the body; we only add the soft ground shadow.
+		draw_Rect_ellipse(Vector2(0, 142 * s), Vector2(62 * s, 14 * s), Color(0, 0, 0, 0.30))
+		return
+	var bob: float = sin(_anim_time * (11.0 if pose == Pose.GAMEPLAY_RUN else (9.0 if _working_tool != "" else 3.2))) * (5.0 if pose == Pose.GAMEPLAY_RUN else 3.6) * s
 	var run_swing: float = sin(_anim_time * 11.0) * (18.0 if pose == Pose.GAMEPLAY_RUN else 0.0) * s
-	var dir: float = 1.0 if _facing_right or pose != Pose.GAMEPLAY_RUN else -1.0
+	var dir: float = 1.0
+	if not _facing_right:
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2(-1.0, 1.0)) # mirror the whole drawn body
 
 	# Ground shadow
 	draw_Rect_ellipse(Vector2(0, 142 * s), Vector2(68 * s, 16 * s), Color(0, 0, 0, 0.32))
@@ -240,13 +375,18 @@ func _draw_arms(bob: float, run_swing: float, s: float) -> void:
 			# Hands on hips or running with selected tool
 			var left_hand := Vector2((-48 - run_swing * 0.5) * s, (12 + bob) * s)
 			var right_hand := Vector2((48 + run_swing * 0.5) * s, (6 + bob) * s)
+			if _working_tool != "":
+				# Arm reaching out to the malfunction, tool in hand, working away
+				right_hand = Vector2(66 * s, (-34 + bob + sin(_anim_time * 12.0) * 9.0) * s)
 			draw_line(left_shoulder, left_hand, OUTLINE, 18 * s, true)
 			draw_line(left_shoulder, left_hand, SKIN_COLOR, 13 * s, true)
 			draw_line(right_shoulder, right_hand, OUTLINE, 18 * s, true)
 			draw_line(right_shoulder, right_hand, SKIN_COLOR, 13 * s, true)
 			draw_circle(left_hand, 8 * s, SKIN_COLOR)
 			draw_circle(right_hand, 8 * s, SKIN_COLOR)
-			if pose == Pose.GAMEPLAY_RUN or pose == Pose.GAMEPLAY_STAND:
+			if _working_tool != "":
+				DuctTapeUI.draw_tool_illustration(self, _working_tool, right_hand + Vector2(10 * s, -6 * s), 0.55 * s)
+			elif pose == Pose.GAMEPLAY_RUN or pose == Pose.GAMEPLAY_STAND:
 				DuctTapeUI.draw_tool_illustration(self, held_tool_id, left_hand + Vector2(-4 * s, 4 * s), 0.45 * s)
 
 func draw_Rect_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:
