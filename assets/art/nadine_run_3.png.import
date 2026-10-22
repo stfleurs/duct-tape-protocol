@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/nadine_run_3.png-7913edae9d09ca40dbf4096f6821
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.9
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
