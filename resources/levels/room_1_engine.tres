@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="LevelData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/levels/level_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+room_id = "engine_room"
+room_number = 1
+display_name = "ENGINE ROOM"
+subtitle = "Keep the plasma pipes, relay panel, and reactor valve alive!"
+shift_duration_sec = 180.0
+max_ship_health = 100.0
+has_secondary_resource = false
+secondary_resource_name = "CORE STABILITY"
+initial_spawn_delay_sec = 1.5
+min_spawn_interval_sec = 6.5
+max_spawn_interval_sec = 10.5
+max_simultaneous_failures = 3
+available_tool_ids = PackedStringArray("duct_tape", "wrench")
+failure_pool_ids = PackedStringArray("pipe_leak", "sparking_panel", "overheating_engine")
+two_star_health_threshold = 45.0
+three_star_health_threshold = 75.0
+three_star_min_score = 900
+base_scrap_reward = 75
+scrap_per_star = 15
+unlocked_by_default = true
+required_previous_stars = 0

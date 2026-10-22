@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="LevelData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/levels/level_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+room_id = "life_support"
+room_number = 2
+display_name = "LIFE SUPPORT"
+subtitle = "Seal O2 scrubbers and hydroponic lines before the air thins!"
+shift_duration_sec = 180.0
+max_ship_health = 100.0
+has_secondary_resource = true
+secondary_resource_name = "OXYGEN"
+initial_spawn_delay_sec = 1.5
+min_spawn_interval_sec = 5.5
+max_spawn_interval_sec = 9.0
+max_simultaneous_failures = 3
+available_tool_ids = PackedStringArray("duct_tape", "wrench")
+failure_pool_ids = PackedStringArray("pipe_leak", "sparking_panel", "overheating_engine")
+two_star_health_threshold = 50.0
+three_star_health_threshold = 80.0
+three_star_min_score = 1100
+base_scrap_reward = 90
+scrap_per_star = 20
+unlocked_by_default = false
+required_previous_stars = 1

@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ToolData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/tools/tool_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+tool_id = "sealant"
+display_name = "SEALANT"
+description = "Pressurized aerosol foam for high-heat galley & hull breaches."
+interaction_type = 2
+instruction_prompt = "Target the breach and spray!"
+accent_color = Color(0.35, 0.9, 0.4, 1)
+unlocked_by_default = false
+unlock_room_index = 2

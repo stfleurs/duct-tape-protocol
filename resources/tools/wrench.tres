@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="ToolData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/tools/tool_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+tool_id = "wrench"
+display_name = "WRENCH"
+description = "Heavy-duty spanner for torquing valves, bolts, and breaker latches."
+interaction_type = 1
+instruction_prompt = "Rotate & torque the valve tight!"
+accent_color = Color(0.2, 0.85, 1, 1)
+unlocked_by_default = true
+unlock_room_index = 0

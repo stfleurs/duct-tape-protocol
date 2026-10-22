@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="LevelData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/levels/level_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+room_id = "galley"
+room_number = 3
+display_name = "GALLEY"
+subtitle = "Tame the alien convection oven and pressurized soup lines!"
+shift_duration_sec = 180.0
+max_ship_health = 100.0
+has_secondary_resource = false
+secondary_resource_name = ""
+initial_spawn_delay_sec = 1.5
+min_spawn_interval_sec = 5.0
+max_spawn_interval_sec = 8.5
+max_simultaneous_failures = 3
+available_tool_ids = PackedStringArray("duct_tape", "wrench", "sealant")
+failure_pool_ids = PackedStringArray("pipe_leak", "sparking_panel", "overheating_engine")
+two_star_health_threshold = 50.0
+three_star_health_threshold = 80.0
+three_star_min_score = 1250
+base_scrap_reward = 105
+scrap_per_star = 20
+unlocked_by_default = false
+required_previous_stars = 2

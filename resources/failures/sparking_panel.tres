@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "sparking_panel"
+display_name = "Sparking Relay Panel"
+failure_type = "electrical"
+required_tool_id = "duct_tape"
+severity = 2
+time_before_escalation = 12.0
+base_health_drain_per_sec = 1.5
+escalated_health_drain_per_sec = 3.2
+secondary_resource_drain_per_sec = 0.0
+repair_duration_target = 3.0
+required_repair_steps = 3
+base_score_reward = 165
+spawn_anchor_id = "electrical_panel"
+badge_type = "lightning"
+repair_header_text = "INSULATE THE RELAY!"
+repair_instruction = "Over, under, smooth it down!"
+pristine_spawn_lines = PackedStringArray("Warning: Decorative sparks detected in Relay Panel B!", "Do NOT slap tape over quantum circuitry, Chief!", "My starboard junction is throwing a light show.")
+pristine_resolved_lines = PackedStringArray("Did you seriously insulate a quantum bus with duct tape?!", "Shockingly, the arcing has ceased.", "That violates seven imperial electrical codes. Carry on.")
