@@ -29,8 +29,15 @@ Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "
 ## Running, Testing & Exporting
 
 ### 1. Run in Godot 4.3
+Double-click **`Launch Game.bat`** (or **`Launch Game (console).bat`** to keep a window open with any errors).
+It finds Godot 4.3 (this folder, `%USERPROFILE%\.godot4\`, Desktop, Downloads, `C:\Godot\`, or `godot` on PATH; or set `GODOT_EXE`), and on a fresh clone it imports the project once first.
+
+> **Fresh clone / zip:** `.godot/` is not in git, so the project must be imported once before the game can run
+> (otherwise custom classes such as `LevelData` are "not found" and the autoloads fail). Either open it once in the
+> Godot 4.3 editor, or run:
 ```powershell
-& "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64.exe" --path .
+& "C:\path\to\Godot_v4.3-stable_win64_console.exe" --headless --path . --import
+& "C:\path\to\Godot_v4.3-stable_win64.exe" --path .
 ```
 
 ### 2. Run Automated Tests (32 assertions)
