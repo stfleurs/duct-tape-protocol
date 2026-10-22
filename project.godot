@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Duct Tape Protocol"
 config/description="Keep the Flawless Ascendancy alive with duct tape, quick thinking, and a wrench!"
-config/version="0.1.0"
+config/version="0.2.0"
 run/main_scene="res://scenes/main_menu/main_menu.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.svg"
@@ -33,7 +33,7 @@ window/size/viewport_height=1280
 window/size/window_width_override=540
 window/size/window_height_override=960
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep_width"
+window/stretch/aspect="expand"
 window/handheld/orientation=1
 
 [input_devices]
@@ -43,6 +43,7 @@ pointing/emulate_mouse_from_touch=true
 
 [rendering]
 
+environment/defaults/default_clear_color=Color(0.16, 0.09, 0.3, 1)
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true

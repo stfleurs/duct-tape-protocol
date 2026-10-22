@@ -210,3 +210,32 @@ static func draw_tool_illustration(canvas: CanvasItem, tool_id: String, center: 
 			var nozzle := Rect2(center.x - 6.0 * s, center.y - 42.0 * s, 12.0 * s, 10.0 * s)
 			canvas.draw_rect(nozzle, Color(0.92, 0.18, 0.18), true)
 			canvas.draw_rect(nozzle, COLOR_OUTLINE, false, 3.0 * s)
+
+## --- Tall / wide screens (stretch aspect "expand") ---------------------------------------
+## Screens designed at 720x1280 are centred on taller or wider phones; draw_bleed() then fills
+## the extra bands so nothing is ever left grey.
+const DESIGN_SIZE := Vector2(720, 1280)
+
+static func fit_design_canvas(ctrl: Control) -> Vector2:
+	var vp: Vector2 = ctrl.get_viewport_rect().size
+	var off := Vector2(maxf(0.0, (vp.x - DESIGN_SIZE.x) * 0.5), maxf(0.0, (vp.y - DESIGN_SIZE.y) * 0.5))
+	ctrl.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	ctrl.position = off
+	ctrl.size = DESIGN_SIZE
+	return off
+
+## Makes a full-rect child (e.g. a modal's dim) also cover the bands outside the design canvas.
+static func bleed_full_rect(child: Control, off: Vector2) -> void:
+	child.set_anchors_preset(Control.PRESET_FULL_RECT)
+	child.offset_left = -off.x
+	child.offset_top = -off.y
+	child.offset_right = off.x
+	child.offset_bottom = off.y
+
+static func draw_bleed(canvas: CanvasItem, off: Vector2, top_color: Color, bottom_color: Color) -> void:
+	if off.y > 0.0:
+		canvas.draw_rect(Rect2(-off.x - 2.0, -off.y - 2.0, DESIGN_SIZE.x + off.x * 2.0 + 4.0, off.y + 3.0), top_color, true)
+		canvas.draw_rect(Rect2(-off.x - 2.0, DESIGN_SIZE.y - 1.0, DESIGN_SIZE.x + off.x * 2.0 + 4.0, off.y + 3.0), bottom_color, true)
+	if off.x > 0.0:
+		canvas.draw_rect(Rect2(-off.x - 2.0, -off.y, off.x + 3.0, DESIGN_SIZE.y + off.y * 2.0), top_color.lerp(bottom_color, 0.5), true)
+		canvas.draw_rect(Rect2(DESIGN_SIZE.x - 1.0, -off.y, off.x + 3.0, DESIGN_SIZE.y + off.y * 2.0), top_color.lerp(bottom_color, 0.5), true)

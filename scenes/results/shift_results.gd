@@ -8,7 +8,14 @@ var _ad_btn: Button
 var _nadine: NadineCharacter
 var _pristine: PristineHologram
 
+var _bleed_off: Vector2 = Vector2.ZERO
+
 func _ready() -> void:
+	_bleed_off = DuctTapeUI.fit_design_canvas(self)
+	get_viewport().size_changed.connect(func() -> void:
+		_bleed_off = DuctTapeUI.fit_design_canvas(self)
+		queue_redraw()
+	)
 	_results = GameManager.last_shift_results
 	if _results.is_empty():
 		_results = {
@@ -119,6 +126,7 @@ func _on_watch_ad_pressed() -> void:
 func _draw() -> void:
 	var survived: bool = bool(_results.get("survived", true))
 	var stars: int = int(_results.get("stars", 3))
+	DuctTapeUI.draw_bleed(self, _bleed_off, Color(0.32, 0.22, 0.52), Color(0.62, 0.54, 0.78))
 
 	# Luxury purple & gold ship corridor background matching Concept Image 5
 	draw_rect(Rect2(0, 0, 720, 1280), Color(0.32, 0.22, 0.52), true)

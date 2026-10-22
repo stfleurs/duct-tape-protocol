@@ -12,7 +12,14 @@ var _nadine: NadineCharacter
 var _pristine: PristineHologram
 var _scrap_label: Label
 
+var _bleed_off: Vector2 = Vector2.ZERO
+
 func _ready() -> void:
+	_bleed_off = DuctTapeUI.fit_design_canvas(self)
+	get_viewport().size_changed.connect(func() -> void:
+		_bleed_off = DuctTapeUI.fit_design_canvas(self)
+		queue_redraw()
+	)
 	_build_ui()
 
 func _build_ui() -> void:
@@ -91,6 +98,7 @@ func _on_room_tapped(room_id: String, room_name: String) -> void:
 		_pristine.say("%s is sealed until you earn stars in previous sectors!" % room_name, "skeptical", 3.5)
 
 func _draw() -> void:
+	DuctTapeUI.draw_bleed(self, _bleed_off, Color(0.11, 0.05, 0.24), Color(0.11, 0.05, 0.24))
 	# 1. Deep space & purple nebula background (matching Concept Image 2)
 	draw_rect(Rect2(0, 0, 720, 1280), Color(0.11, 0.05, 0.24), true)
 	draw_circle(Vector2(620, 180), 210.0, Color(0.52, 0.18, 0.75, 0.25))

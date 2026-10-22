@@ -4,7 +4,14 @@ var _nadine: NadineCharacter
 var _pristine: PristineHologram
 var _settings_modal: Control
 
+var _bleed_off: Vector2 = Vector2.ZERO
+
 func _ready() -> void:
+	_bleed_off = DuctTapeUI.fit_design_canvas(self)
+	get_viewport().size_changed.connect(func() -> void:
+		_bleed_off = DuctTapeUI.fit_design_canvas(self)
+		queue_redraw()
+	)
 	_build_ui()
 
 func _build_ui() -> void:
@@ -66,7 +73,7 @@ func _build_settings_modal() -> void:
 	_settings_modal.visible = false
 
 	var dim := ColorRect.new()
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	DuctTapeUI.bleed_full_rect(dim, _bleed_off)
 	dim.color = Color(0.05, 0.02, 0.12, 0.80)
 	_settings_modal.add_child(dim)
 
@@ -128,6 +135,7 @@ func _build_settings_modal() -> void:
 	add_child(_settings_modal)
 
 func _draw() -> void:
+	DuctTapeUI.draw_bleed(self, _bleed_off, Color(0.14, 0.06, 0.28), Color(0.74, 0.72, 0.84))
 	# 1. Deep space sky at top + multi-deck Flawless Ascendancy ship interior (matching Concept Image 1)
 	draw_rect(Rect2(0, 0, 720, 220), Color(0.14, 0.06, 0.28), true)
 	draw_circle(Vector2(86, 68), 46.0, Color(0.68, 0.35, 0.92, 0.45))
