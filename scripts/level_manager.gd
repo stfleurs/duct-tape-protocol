@@ -142,6 +142,18 @@ func attempt_engage_failure(instance_id: int) -> Dictionary:
 	failure_manager.set_being_repaired(instance_id, true)
 	return {"ok": true, "instance": inst}
 
+## v0.2 one-touch flow: touching a malfunction auto-equips the right tool, then engages it.
+## No wrong-tool penalty: the player just sees the problem, touches it and does the gesture.
+func engage_failure_auto(instance_id: int) -> Dictionary:
+	var inst: Dictionary = failure_manager.get_failure_by_instance_id(instance_id)
+	if inst.is_empty():
+		return {"ok": false, "reason": "not_found"}
+	var required_tool: String = String(inst.get("required_tool_id", "duct_tape"))
+	if selected_tool_id != required_tool and available_tools.has(required_tool):
+		selected_tool_id = required_tool
+		tool_selected.emit(selected_tool_id)
+	return attempt_engage_failure(instance_id)
+
 func complete_failure_repair(instance_id: int, repair_elapsed_sec: float) -> Dictionary:
 	var inst: Dictionary = failure_manager.resolve_failure(instance_id)
 	if inst.is_empty():
