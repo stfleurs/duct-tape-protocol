@@ -34,6 +34,21 @@ var _anim_time: float = 0.0
 var _fx: Control
 
 ## Kept for older code that read fixed positions; the real positions are in anchor_positions.
+## Where things are in the painted background (engine_room_bg.png), as 0..1 of the image.
+## Used only when that file exists; tweak these if the background art changes.
+const ART_ANCHORS: Dictionary = {
+	"reactor_core": Vector2(0.50, 0.465),
+	"electrical_panel": Vector2(0.72, 0.335),
+	"pipe_joint": Vector2(0.79, 0.51),
+	"pipe_left": Vector2(0.27, 0.51),
+	"pipe_right": Vector2(0.96, 0.51),
+	"core_rect_tl": Vector2(0.37, 0.31),
+	"core_rect_br": Vector2(0.63, 0.50),
+	"floor": Vector2(0.0, 0.68),
+	"pristine": Vector2(0.20, 0.205),
+	"nadine_home": Vector2(0.22, 0.0)
+}
+
 const ANCHOR_POSITIONS: Dictionary = {
 	"pipe_joint": Vector2(510, 745),
 	"electrical_panel": Vector2(642, 645),
@@ -98,6 +113,11 @@ func layout_room(sz: Vector2) -> void:
 	_riser_rect = Rect2(_ox + 470.0 * 1.0, lower_top, 40.0 * k, pipe_y - lower_top + 4.0)
 	var leak_pos := Vector2(_ox + 560.0, pipe_y + pipe_th * 0.5)
 
+	var bg: Texture2D = ArtLib.tex("engine_room_bg")
+	if bg != null:
+		_layout_on_art(bg, w, h)
+		return
+
 	anchor_positions = {
 		"pipe_joint": leak_pos,
 		"electrical_panel": _panel_rect.get_center(),
@@ -120,6 +140,41 @@ func layout_room(sz: Vector2) -> void:
 			nadine.set_home_x(nadine.position.x)
 	queue_redraw()
 
+func _layout_on_art(bg: Texture2D, w: float, h: float) -> void:
+	var cr: Rect2 = ArtLib.cover_rect(bg.get_size(), Rect2(0, top_inset, w, h - top_inset))
+	var m := func(n: Vector2) -> Vector2: return cr.position + n * cr.size
+	var k: float = clampf(cr.size.x / 720.0, 1.0, 1.35)
+	element_scale = k
+	upper_deck_bottom = m.call(Vector2(0, 0.27)).y
+	floor_y = m.call(ART_ANCHORS["floor"]).y
+	var tl: Vector2 = m.call(ART_ANCHORS["core_rect_tl"])
+	var br: Vector2 = m.call(ART_ANCHORS["core_rect_br"])
+	_core_rect = Rect2(tl, br - tl)
+	var pc: Vector2 = m.call(ART_ANCHORS["electrical_panel"])
+	_panel_rect = Rect2(pc - Vector2(56, 78) * k, Vector2(112, 156) * k)
+	var leak: Vector2 = m.call(ART_ANCHORS["pipe_joint"])
+	var pl: Vector2 = m.call(ART_ANCHORS["pipe_left"])
+	var pr: Vector2 = m.call(ART_ANCHORS["pipe_right"])
+	var pipe_th: float = 0.045 * cr.size.y
+	_pipe_rect = Rect2(pl.x, leak.y - pipe_th * 0.5, pr.x - pl.x, pipe_th)
+	_riser_rect = Rect2()
+	anchor_positions = {
+		"pipe_joint": leak,
+		"electrical_panel": pc,
+		"reactor_core": m.call(ART_ANCHORS["reactor_core"])
+	}
+	anchor_hit_radius = {"pipe_joint": 120.0 * k, "electrical_panel": 120.0 * k, "reactor_core": 130.0 * k}
+	if pristine != null:
+		pristine.position = m.call(ART_ANCHORS["pristine"])
+		pristine.bubble_offset = Vector2(70, -50)
+	if nadine != null:
+		nadine.character_scale = 0.96 * k
+		nadine.position.y = floor_y + 34.0 - 142.0 * nadine.character_scale
+		if not nadine.is_moving():
+			nadine.position.x = m.call(ART_ANCHORS["nadine_home"]).x
+			nadine.set_home_x(nadine.position.x)
+	queue_redraw()
+
 func get_anchor_position(anchor_id: String) -> Vector2:
 	return anchor_positions.get(anchor_id, Vector2(_ox + 500.0, floor_y - 200.0))
 
@@ -139,8 +194,8 @@ func find_active_anchor_at(pos: Vector2) -> String:
 		var d: float = pos.distance_to(a)
 		if anchor_id == "pipe_joint":
 			# The whole stretch of pipe around the leak counts.
-			var dx: float = maxf(0.0, absf(pos.x - a.x) - 140.0 * element_scale)
-			d = Vector2(dx, pos.y - a.y).length()
+			var dx: float = maxf(0.0, absf(pos.x - a.x) - 80.0 * element_scale)
+			d = Vector2(dx, pos.y - a.y).length() + 24.0 # on a tie, the valve/relay win
 		if d <= get_anchor_hit_radius(anchor_id) and d < best_d:
 			best_d = d
 			best = anchor_id
@@ -340,7 +395,9 @@ func _draw_props(k: float, ol: Color, gold: Color) -> void:
 	var leak: Vector2 = get_anchor_position("pipe_joint")
 	var leaking: bool = active_failures_by_anchor.has("pipe_joint")
 	var seg_art: Texture2D = ArtLib.tex("pipe_segment")
-	if seg_art != null:
+	if ArtLib.tex("engine_room_bg") != null:
+		pass # the painted background already has the pipe; only the crack/tape go on top
+	elif seg_art != null:
 		draw_texture_rect(seg_art, _pipe_rect.grow_individual(0, 8, 0, 8), false)
 	else:
 		draw_rect(_pipe_rect, Color(0.90, 0.92, 0.96), true)
@@ -362,7 +419,8 @@ func _draw_props(k: float, ol: Color, gold: Color) -> void:
 				leak + Vector2(-8, 4), leak + Vector2(6, _pipe_rect.size.y * 0.5)
 			])
 			draw_polyline(crack, ol, 5.0)
-		draw_rect(Rect2(leak.x - 130 * k, floor_y + 14, 260 * k, 22), Color(0.68, 0.42, 0.96, 0.55), true)
+		if ArtLib.tex("engine_room_bg") == null:
+			draw_rect(Rect2(leak.x - 130 * k, floor_y + 14, 260 * k, 22), Color(0.68, 0.42, 0.96, 0.55), true)
 	if patched_anchors.has("pipe_joint"):
 		_draw_tape_patch(Rect2(leak.x - 46 * k, _pipe_rect.position.y - 6, 92 * k, _pipe_rect.size.y + 12), 1)
 

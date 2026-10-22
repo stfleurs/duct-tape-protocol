@@ -183,10 +183,14 @@ func _draw() -> void:
 		draw_rect(inner, Color(0.30, 0.22, 0.48), true)
 		for i in range(6):
 			draw_line(Vector2(inner.position.x, inner.position.y + 60 + i * 90), Vector2(inner.end.x, inner.position.y + 60 + i * 90), Color(0.36, 0.28, 0.56), 3.0)
-	# 2. pipe
+	# 2. pipe (art: closeup_pipe, a wide strip; closeup_leak_drops on top until sealed)
+	var sealed: float = repair_controller.progress
 	var pipe_art: Texture2D = ArtLib.tex("closeup_pipe")
+	var strip := pipe_rect
 	if pipe_art != null:
-		draw_texture_rect(pipe_art, ArtLib.cover_rect(pipe_art.get_size(), inner), false)
+		var sh: float = inner.size.x * float(pipe_art.get_height()) / maxf(1.0, float(pipe_art.get_width()))
+		strip = Rect2(inner.position.x, pipe_y - sh * 0.5, inner.size.x, sh)
+		draw_texture_rect(pipe_art, strip, false)
 	else:
 		draw_rect(pipe_rect, Color(0.88, 0.90, 0.95), true)
 		draw_rect(Rect2(pipe_rect.position + Vector2(0, 12), Vector2(pipe_rect.size.x, pipe_h * 0.22)), Color.WHITE, true)
@@ -202,18 +206,21 @@ func _draw() -> void:
 			Vector2(cx - 14, pipe_y + 8), Vector2(cx + 10, pipe_rect.end.y)
 		])
 		draw_polyline(crack, DuctTapeUI.COLOR_OUTLINE, 7.0)
+	var drops: Texture2D = ArtLib.tex("closeup_leak_drops")
+	if drops != null and sealed < 0.99:
+		var wob: float = sin(_anim_time * 10.0) * 4.0
+		draw_texture_rect(drops, Rect2(strip.position + Vector2(0, wob - 30.0 * fmod(_anim_time, 0.5)), strip.size), false, Color(1, 1, 1, 1.0 - sealed * 0.8))
 	# leak spray until it is sealed
-	var sealed: float = repair_controller.progress
 	if sealed < 0.99:
 		for i in range(12):
 			var t: float = fmod(_anim_time * 2.2 + float(i) * 0.083, 1.0)
-			var p := Vector2(cx + sin(float(i) * 2.3) * 90.0 * t, pipe_rect.position.y - t * 200.0)
+			var p := Vector2(cx + sin(float(i) * 2.3) * 90.0 * t, strip.position.y + strip.size.y * 0.2 - t * 200.0)
 			draw_circle(p, 12.0 + t * 34.0, Color(0.78, 0.48, 0.98, (1.0 - t) * 0.7 * (1.0 - sealed)))
 	# 3. tape wraps (frames advance as you swipe)
 	var wf: int = get_wrap_frame()
 	var wrap_art: Texture2D = ArtLib.tex("closeup_tape_wrap_%d" % wf) if wf > 0 else null
 	if wrap_art != null:
-		draw_texture_rect(wrap_art, ArtLib.cover_rect(wrap_art.get_size(), inner), false)
+		draw_texture_rect(wrap_art, strip, false)
 	elif wf > 0:
 		for i in range(wf):
 			var off: float = (float(i) - 1.0) * 46.0

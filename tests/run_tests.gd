@@ -291,7 +291,12 @@ func _test_room_layout_fills_tall_screens() -> void:
 		var p: Vector2 = room.anchor_positions[a]
 		ok_tall = ok_tall and p.y > 104.0 and p.y < 1600.0 and p.x > 0.0 and p.x < 720.0
 	_assert(ok_short and ok_tall, "All malfunctions sit inside the room on 16:9 and 20:9 screens")
-	_assert(room.floor_y > floor_short + 200.0 and room.floor_y > 1600.0 - 200.0, "On a 20:9 phone the room floor moves down to the bottom of the screen")
+	var bg: Texture2D = ArtLib.tex("engine_room_bg")
+	if bg != null:
+		var cr: Rect2 = ArtLib.cover_rect(bg.get_size(), Rect2(0, 104, 720, 1600 - 104))
+		_assert(cr.encloses(Rect2(0, 104, 720, 1600 - 104)), "On a 20:9 phone the painted room covers the whole screen")
+	else:
+		_assert(room.floor_y > floor_short + 200.0 and room.floor_y > 1600.0 - 200.0, "On a 20:9 phone the room floor moves down to the bottom of the screen")
 	_assert(String(ProjectSettings.get_setting("display/window/stretch/aspect")) == "expand", "Stretch aspect is 'expand' (no letterbox / grey band)")
 	room.free()
 
@@ -346,13 +351,13 @@ func _test_in_room_repair_flow() -> void:
 	lm.failure_manager.spawn_failure("overheating_engine")
 	gs._refresh_room_failures()
 	var vc: Vector2 = room.get_anchor_position("reactor_core")
-	layer.pointer_pressed(vc + Vector2(80, 0))
+	layer.pointer_pressed(vc + Vector2(60, 0))
 	_assert(lm.selected_tool_id == "wrench", "Touching the valve grabs the wrench automatically")
 	var k: int = 0
 	while lm.repairs_completed < 3 and k < 200:
 		k += 1
 		var a: float = float(k) * TAU / 36.0
-		layer.pointer_moved(vc + Vector2(cos(a), sin(a)) * 80.0)
+		layer.pointer_moved(vc + Vector2(cos(a), sin(a)) * 60.0)
 	layer.pointer_released(vc)
 	_assert(lm.repairs_completed == 3, "Valve fixed in the room by spinning the wrench")
 	gs.queue_free()

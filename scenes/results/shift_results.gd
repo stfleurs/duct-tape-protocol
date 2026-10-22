@@ -46,7 +46,7 @@ func _build_ui() -> void:
 	_pristine = PristineHologram.new()
 	_pristine.position = Vector2(566, 755)
 	_pristine.hologram_scale = 1.08
-	_pristine.bubble_offset = Vector2(-150, -210)
+	_pristine.bubble_offset = Vector2(-300, 70)
 	add_child(_pristine)
 	if survived:
 		_pristine.say("Acceptable. Barely. Do not tell the Captain.", "smug", 12.0)
