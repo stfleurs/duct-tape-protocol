@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "hull_breach"
+display_name = "HULL BREACH"
+failure_type = "hull"
+required_tool_id = "duct_tape"
+severity = 3
+time_before_escalation = 6.0
+base_health_drain_per_sec = 3.0
+escalated_health_drain_per_sec = 5.5
+repair_duration_target = 2.5
+required_repair_steps = 2
+base_score_reward = 300
+spawn_anchor_id = "hull_plate"
+badge_type = "exclamation"
+repair_header_text = "SEAL THE BREACH!"
+repair_instruction = "Swipe tape in an X across the hole, FAST!"
+repair_gesture = "x_tape"
+anchor_kind = "hull"
+urgent = true
+min_difficulty = 0.3
+prop_art_broken = "hull_breach"
+prop_art_fixed = "hull_patched"
+spawn_sfx = "pipe_burst"
+loop_sfx = "steam_hiss_loop"
+chain_failure_ids = PackedStringArray("door_jammed")
+chain_chance = 0.3
+chain_quips = PackedStringArray("Breach sealed! The pressure slam jammed a hatch. Of course it did.")
+pristine_spawn_lines = PackedStringArray("HULL BREACH! This is fine. This is FINE!", "There is SPACE coming in! Tape it! TAPE IT!", "Atmosphere leaving the building, Chief!")
+pristine_resolved_lines = PackedStringArray("An X of tape between us and the void. Magnificent. Horrifying.", "Breach sealed. I was not scared. My fans were just loud.")

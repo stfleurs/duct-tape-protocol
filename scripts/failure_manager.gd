@@ -9,6 +9,41 @@ var _failure_catalog: Dictionary = {}
 var _active_failures: Dictionary = {} # instance_id -> Dictionary
 var _next_instance_id: int = 1
 var _max_simultaneous: int = 3
+## v0.3: room spots by kind (pipe, relay, fuse, valve, cable, vent, hull, hatch) -> anchor ids.
+## Empty = every malfunction uses its own default spawn_anchor_id (v0.2 behaviour).
+var anchor_pool: Dictionary = {}
+var rng := RandomNumberGenerator.new()
+
+func _init() -> void:
+	rng.randomize()
+
+func set_anchor_pool(pool: Dictionary) -> void:
+	anchor_pool = pool.duplicate(true)
+
+func has_failure(failure_id: String) -> bool:
+	return _failure_catalog.has(failure_id)
+
+func get_catalog_ids() -> Array:
+	return _failure_catalog.keys()
+
+func is_anchor_busy(anchor_id: String) -> bool:
+	return not get_failure_at_anchor(anchor_id).is_empty()
+
+## Free spots this malfunction could appear on right now.
+func free_anchors_for(failure_id: String) -> Array[String]:
+	var out: Array[String] = []
+	if not _failure_catalog.has(failure_id):
+		return out
+	var f_data: FailureData = _failure_catalog[failure_id]
+	var kind: String = f_data.get_anchor_kind()
+	if anchor_pool.is_empty() or not anchor_pool.has(kind):
+		if anchor_pool.is_empty() and not is_anchor_busy(f_data.spawn_anchor_id):
+			out.append(f_data.spawn_anchor_id)
+		return out
+	for a in anchor_pool[kind]:
+		if not is_anchor_busy(String(a)):
+			out.append(String(a))
+	return out
 
 func configure(catalog: Array[FailureData], max_simultaneous: int = 3) -> void:
 	_failure_catalog.clear()
@@ -46,18 +81,18 @@ func can_spawn_failure(failure_id: String) -> bool:
 		return false
 	if not _failure_catalog.has(failure_id):
 		return false
-	var f_data: FailureData = _failure_catalog[failure_id]
 	# Prevent two failures on the exact same anchor simultaneously
-	for key in _active_failures.keys():
-		var inst: Dictionary = _active_failures[key]
-		if inst.get("anchor_id", "") == f_data.spawn_anchor_id:
-			return false
-	return true
+	return not free_anchors_for(failure_id).is_empty()
 
-func spawn_failure(failure_id: String) -> Dictionary:
+## Spawns a malfunction on a random free spot of its kind (or on anchor_id when given and free).
+func spawn_failure(failure_id: String, anchor_id: String = "", extra: Dictionary = {}) -> Dictionary:
 	if not can_spawn_failure(failure_id):
 		return {}
 	var f_data: FailureData = _failure_catalog[failure_id]
+	var free: Array[String] = free_anchors_for(failure_id)
+	var chosen_anchor: String = free[rng.randi() % free.size()]
+	if anchor_id != "" and free.has(anchor_id):
+		chosen_anchor = anchor_id
 	var instance_id: int = _next_instance_id
 	_next_instance_id += 1
 
@@ -65,13 +100,23 @@ func spawn_failure(failure_id: String) -> Dictionary:
 		"instance_id": instance_id,
 		"failure_id": f_data.failure_id,
 		"data": f_data,
-		"anchor_id": f_data.spawn_anchor_id,
+		"anchor_id": chosen_anchor,
 		"required_tool_id": f_data.required_tool_id,
 		"age_sec": 0.0,
 		"escalated": false,
 		"being_repaired": false,
-		"wrong_tool_attempts": 0
+		"wrong_tool_attempts": 0,
+		"chain": false,
+		# Random look so no two cracks are the same: rotation, size, mirror, and a seed for details.
+		"variant": {
+			"rot": rng.randf_range(-0.35, 0.35),
+			"scale": rng.randf_range(0.8, 1.25),
+			"flip": rng.randf() < 0.5,
+			"seed": rng.randi() % 100000
+		}
 	}
+	for k in extra.keys():
+		instance[k] = extra[k]
 	_active_failures[instance_id] = instance
 	failure_spawned.emit(instance)
 	return instance
@@ -89,7 +134,7 @@ func spawn_next_available(preferred_order: PackedStringArray = PackedStringArray
 
 	if candidates.is_empty():
 		return {}
-	var chosen: String = candidates[randi() % candidates.size()]
+	var chosen: String = candidates[rng.randi() % candidates.size()]
 	return spawn_failure(chosen)
 
 func set_being_repaired(instance_id: int, repairing: bool) -> void:

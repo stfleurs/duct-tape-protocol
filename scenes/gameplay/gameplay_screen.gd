@@ -1,17 +1,25 @@
 extends Control
 
-## Gameplay screen, v0.2:
-## - fills any phone height (no grey band): room fills the screen, HUD is one compact top bar
-## - see a problem -> touch it -> Nadine runs over, the right tool is picked automatically
-## - relay + valve are fixed right in the room; the burst pipe gets a quick tape close-up
+## Gameplay screen, v0.3: a shift is 3-4 wide rooms in a row, with short corridor dashes between some.
+## - each room: malfunctions pop up at random spots, you touch one, Nadine runs over (camera follows),
+##   the right tool is picked, you do that malfunction's gesture. Fix the room's quota -> exit door opens.
+## - fixes can set off chain reactions elsewhere in the room (PRISTINE is not impressed).
+## - corridor dash: auto-run, swipe up to jump vents, down to slide under cables, grab tape and scrap.
+## - the burst pipe keeps its quick tape close-up.
 
 const HUD_H := 104.0
 const TOOLBELT_H := 112.0
 
 var level_manager: LevelManager
-var room_view: EngineRoomView
+var room_view: ShipRoomView
 var in_room: InRoomRepair
 var tape_closeup: TapeCloseup
+var dash: CorridorDash
+
+var plan: Array[Dictionary] = []
+var segment_index: int = -1
+var room_number: int = 0
+var room_count: int = 3
 
 var _top_bar: Panel
 var _health_bg: ColorRect
@@ -30,13 +38,21 @@ var _toolbelt: Control
 var _tool_buttons: Dictionary = {}
 var _pause_modal: Control
 var _pause_card: PanelContainer
+var _fade: ColorRect
+var _title_card: Label
 
 var _engaged_iid: int = -1
 var _engaged_anchor: String = ""
 var _pending_closeup: Dictionary = {}
 var _closeup_wait: float = 0.0
 var _health_ratio: float = 1.0
-var _time_ratio: float = 1.0
+var _time_ratio: float = 0.0
+var _heading_to_exit: bool = false
+var _leaving: bool = false
+var _step_timer: float = 0.0
+var _spark_timer: float = 0.8
+var _shake_t: float = 0.0
+var _segment_kind: String = ""
 
 func _ready() -> void:
 	_build_scene_hierarchy()
@@ -45,21 +61,38 @@ func _ready() -> void:
 	_start_configured_shift()
 
 func _build_scene_hierarchy() -> void:
-	# 1. The room fills the whole screen (behind the HUD)
-	room_view = EngineRoomView.new()
+	# 1. The wide room (camera + parallax inside)
+	room_view = ShipRoomView.new()
 	room_view.top_inset = HUD_H
 	room_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(room_view)
 
-	# 2. In-room repair input + feedback layer
+	# 2. Corridor dash (shown between some rooms)
+	dash = CorridorDash.new()
+	dash.top_inset = HUD_H
+	dash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dash.visible = false
+	dash.hazard_hit.connect(_on_dash_hit)
+	dash.item_picked.connect(func(_kind: String) -> void: level_manager.add_pickup(1))
+	dash.dash_finished.connect(func(_p: int, _h: int) -> void: _leave_segment())
+	add_child(dash)
+
+	# 3. In-room repair input + feedback layer
 	in_room = InRoomRepair.new()
 	in_room.room_view = room_view
 	in_room.set_anchors_preset(Control.PRESET_FULL_RECT)
 	in_room.repair_engage_requested.connect(_engage_failure)
 	in_room.repair_succeeded.connect(_on_repair_succeeded)
+	in_room.walk_requested.connect(_on_walk_requested)
+	in_room.exit_requested.connect(_head_to_exit)
+	in_room.stage_tool_changed.connect(func(t: String) -> void:
+		if level_manager.available_tools.has(t):
+			level_manager.selected_tool_id = t
+			level_manager.tool_selected.emit(t)
+	)
 	add_child(in_room)
 
-	# 3. Compact toolbelt: shows the tool Nadine grabbed (auto-picked); tapping is optional
+	# 4. Compact toolbelt: shows the tool Nadine grabbed (auto-picked); tapping is optional
 	_toolbelt = Control.new()
 	_toolbelt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_toolbelt)
@@ -71,7 +104,7 @@ func _build_scene_hierarchy() -> void:
 	for cfg in tool_configs:
 		_toolbelt.add_child(_create_tool_chip(String(cfg["id"]), String(cfg["label"]), bool(cfg["unlocked"])))
 
-	# 4. Banner (readable, under the HUD)
+	# 5. Banner (readable, under the HUD)
 	_banner = PanelContainer.new()
 	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var tut_style := StyleBoxFlat.new()
@@ -88,7 +121,7 @@ func _build_scene_hierarchy() -> void:
 	_banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_banner_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_banner_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_banner_label.add_theme_font_size_override("font_size", 28)
+	_banner_label.add_theme_font_size_override("font_size", 26)
 	_banner_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.72))
 	_banner_label.add_theme_color_override("font_outline_color", DuctTapeUI.COLOR_OUTLINE)
 	_banner_label.add_theme_constant_override("outline_size", 6)
@@ -96,7 +129,7 @@ func _build_scene_hierarchy() -> void:
 	_banner.add_child(_banner_label)
 	add_child(_banner)
 
-	# 5. Pipe close-up repair moment
+	# 6. Pipe close-up repair moment
 	tape_closeup = TapeCloseup.new()
 	tape_closeup.top_inset = HUD_H
 	tape_closeup.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -104,27 +137,45 @@ func _build_scene_hierarchy() -> void:
 	tape_closeup.repair_closed.connect(_on_closeup_closed)
 	add_child(tape_closeup)
 
-	# 6. One compact top bar: health, score, timer, pause + the orange shift-timer bar
+	# 7. Room transition: fade + "ROOM 2/4  CARGO BAY" title card
+	_fade = ColorRect.new()
+	_fade.color = Color(0.05, 0.02, 0.12, 0.0)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_fade)
+	_title_card = Label.new()
+	_title_card.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title_card.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_title_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_card.add_theme_font_size_override("font_size", 58)
+	_title_card.add_theme_color_override("font_color", Color(1.0, 0.9, 0.4))
+	_title_card.add_theme_color_override("font_outline_color", DuctTapeUI.COLOR_OUTLINE)
+	_title_card.add_theme_constant_override("outline_size", 16)
+	_title_card.modulate.a = 0.0
+	add_child(_title_card)
+
+	# 8. One compact top bar: health, score, timer, pause + room name / room progress
 	_build_top_bar()
 
-	# 7. Pause modal (also handles OS pause / backgrounding)
+	# 9. Pause modal (also handles OS pause / backgrounding)
 	_build_pause_modal()
 	GameManager.pause_state_changed.connect(func(paused: bool) -> void:
 		if _pause_modal != null:
 			_pause_modal.visible = paused
 	)
 
-	# 8. LevelManager logic node
+	# 10. LevelManager logic node
 	level_manager = LevelManager.new()
 	add_child(level_manager)
 	level_manager.health_changed.connect(_on_health_changed)
-	level_manager.timer_changed.connect(_on_timer_changed)
 	level_manager.score_changed.connect(_on_score_changed)
 	level_manager.tool_selected.connect(_on_tool_selected)
-	level_manager.failure_spawned.connect(func(_inst: Dictionary) -> void: _refresh_room_failures())
+	level_manager.failure_spawned.connect(_on_failure_spawned)
 	level_manager.failure_resolved.connect(_on_failure_resolved)
 	level_manager.pristine_message_requested.connect(_on_pristine_message)
 	level_manager.shift_finished.connect(_on_shift_finished)
+	level_manager.room_progress_changed.connect(_on_room_progress)
+	level_manager.room_cleared.connect(_on_room_cleared)
+	level_manager.chain_reaction.connect(_on_chain_reaction)
 
 func _hud_label(text: String, font_size: int, color: Color) -> Label:
 	var l := Label.new()
@@ -167,7 +218,7 @@ func _build_top_bar() -> void:
 	t_style.set_border_width_all(3)
 	t_style.set_corner_radius_all(22)
 	_timer_pill.add_theme_stylebox_override("panel", t_style)
-	_timer_label = _hud_label("3:00", 32, Color.WHITE)
+	_timer_label = _hud_label("0:00", 32, Color.WHITE)
 	_timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_timer_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_timer_pill.add_child(_timer_label)
@@ -183,8 +234,8 @@ func _build_top_bar() -> void:
 	)
 	_top_bar.add_child(_pause_btn)
 
-	# Orange bar = time left in the shift (labelled so it is not mistaken for a 2nd health bar)
-	_shift_label = _hud_label("SHIFT", 18, DuctTapeUI.COLOR_ORANGE_TOP)
+	# Row 2: which room of the shift you're in + how much of this room is fixed
+	_shift_label = _hud_label("ROOM 1/3  ENGINE ROOM", 23, DuctTapeUI.COLOR_ORANGE_TOP)
 	_shift_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_top_bar.add_child(_shift_label)
 	_shift_bg = ColorRect.new()
@@ -216,13 +267,19 @@ func _layout() -> void:
 	_health_fill.size = Vector2((hb_w - 10.0) * _health_ratio, 42)
 	_health_label.position = Vector2(30, 14)
 	_health_label.size = Vector2(hb_w - 20.0, 52)
-	# row 2: shift timer bar
-	_shift_label.position = Vector2(16, 72)
-	_shift_label.size = Vector2(70, 24)
-	_shift_bg.position = Vector2(86, 76)
-	_shift_bg.size = Vector2(w - 86.0 - 16.0, 18)
-	_shift_fill.position = Vector2(89, 79)
-	_shift_fill.size = Vector2((w - 86.0 - 22.0) * _time_ratio, 12)
+	# row 2: room name + room progress
+	_shift_label.position = Vector2(16, 70)
+	_shift_label.size = Vector2(330, 28)
+	_shift_bg.position = Vector2(350, 76)
+	_shift_bg.size = Vector2(w - 350.0 - 16.0, 18)
+	_shift_fill.position = Vector2(353, 79)
+	_shift_fill.size = Vector2((w - 350.0 - 22.0) * _time_ratio, 12)
+	if _fade != null:
+		_fade.size = Vector2(w, h)
+		_title_card.position = Vector2(0, h * 0.36)
+		_title_card.size = Vector2(w, 260)
+	if dash != null:
+		dash.top_inset = HUD_H
 	# banner
 	_banner.position = Vector2(16, HUD_H + 10.0)
 	_banner.custom_minimum_size = Vector2(w - 32.0, 60)
@@ -288,6 +345,7 @@ func _build_pause_modal() -> void:
 	_pause_modal.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 	_pause_modal.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_pause_modal.visible = false
+	_pause_modal.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	var dim := ColorRect.new()
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -295,7 +353,7 @@ func _build_pause_modal() -> void:
 	_pause_modal.add_child(dim)
 
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(540, 480)
+	card.custom_minimum_size = Vector2(540, 640)
 	_pause_card = card
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.24, 0.15, 0.44)
@@ -349,43 +407,205 @@ func _build_pause_modal() -> void:
 	)
 	vbox.add_child(menu_btn)
 
+	# Music / sound effects toggles (saved in settings)
+	for setting_info in [{"key": "music_enabled", "label": "MUSIC"}, {"key": "sound_enabled", "label": "SOUND FX"}]:
+		var s_key: String = String(setting_info["key"])
+		var s_lbl: String = String(setting_info["label"])
+		var tb := Button.new()
+		tb.custom_minimum_size = Vector2(380, 66)
+		tb.text = "%s: %s" % [s_lbl, "ON" if bool(SaveManager.get_setting(s_key, true)) else "OFF"]
+		DuctTapeUI.style_pill_button(tb, DuctTapeUI.COLOR_PURPLE_MID, DuctTapeUI.COLOR_PURPLE_DARK, 26, 33)
+		tb.pressed.connect(func() -> void:
+			var nv: bool = not bool(SaveManager.get_setting(s_key, true))
+			SaveManager.set_setting(s_key, nv)
+			AudioManager.apply_settings()
+			tb.text = "%s: %s" % [s_lbl, "ON" if nv else "OFF"]
+			AudioManager.play_sfx("button")
+		)
+		vbox.add_child(tb)
+
 	add_child(_pause_modal)
 
+
+# ------------------------------------------------------------------ shift flow
 func _start_configured_shift() -> void:
 	var lvl: LevelData = GameManager.load_level_data(GameManager.selected_room_id)
 	var tape_res: ToolData = load("res://resources/tools/duct_tape.tres") as ToolData
 	var wrench_res: ToolData = load("res://resources/tools/wrench.tres") as ToolData
-	var pipe_res: FailureData = load("res://resources/failures/pipe_leak.tres") as FailureData
-	var spark_res: FailureData = load("res://resources/failures/sparking_panel.tres") as FailureData
-	var engine_res: FailureData = load("res://resources/failures/overheating_engine.tres") as FailureData
+	level_manager.setup_shift(lvl, [tape_res, wrench_res], ShipRooms.load_all_failures(), GameManager.shift_duration_override)
+	plan = ShipRooms.build_plan(GameManager.selected_room_id, lvl.room_number if lvl != null else 1)
+	room_count = ShipRooms.count_rooms(plan)
+	var par: float = 0.0
+	for s in plan:
+		par += float(s.get("duration", 0.0)) + float(s.get("quota", 0)) * 9.0
+	level_manager.par_time_sec = par
+	segment_index = -1
+	room_number = 0
+	_start_next_segment(true)
 
-	level_manager.setup_shift(
-		lvl,
-		[tape_res, wrench_res],
-		[pipe_res, spark_res, engine_res],
-		GameManager.shift_duration_override
+func _start_next_segment(first: bool = false) -> void:
+	segment_index += 1
+	if segment_index >= plan.size():
+		level_manager.finish_shift_now(true)
+		return
+	var s: Dictionary = plan[segment_index]
+	_segment_kind = String(s.get("type", "room"))
+	_heading_to_exit = false
+	_leaving = false
+	AudioManager.stop_all_loops()
+	if _segment_kind == "dash":
+		_start_dash(s)
+	else:
+		_start_room(s, first)
+	_fade_in()
+
+func _start_room(s: Dictionary, first: bool) -> void:
+	room_number += 1
+	var rid: String = String(s.get("room_id", "engine_room"))
+	room_view.visible = true
+	in_room.visible = true
+	in_room.mouse_filter = Control.MOUSE_FILTER_STOP
+	dash.visible = false
+	dash.running = false
+	_toolbelt.visible = true
+	in_room.reset_all()
+	_engaged_iid = -1
+	_engaged_anchor = ""
+	room_view.load_room(rid)
+	var room: Dictionary = ShipRooms.get_room(rid)
+	level_manager.begin_room(rid, PackedStringArray(room.get("pool", [])), ShipRooms.get_anchor_pool(rid),
+		int(s.get("quota", 3)), float(s.get("difficulty", 0.0)), int(s.get("max_active", 3)),
+		"pipe_leak" if first and rid == "engine_room" else "")
+	_refresh_room_failures()
+	_shift_label.text = "ROOM %d/%d  %s" % [room_number, room_count, String(room.get("name", ""))]
+	AudioManager.play_music(String(room.get("music", "engine_room_loop")))
+	AudioManager.play_ambience(String(room.get("ambience", "engine_room_ambience_loop")))
+	_show_title("ROOM %d/%d\n%s" % [room_number, room_count, String(room.get("name", ""))])
+	var quip: String = "Welcome to your shift, Chief. Try not to smudge my hull." if first else String(room.get("quip", ""))
+	room_view.pristine.say(quip, "skeptical", 4.0)
+
+func _start_dash(s: Dictionary) -> void:
+	room_view.visible = false
+	in_room.visible = false
+	in_room.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_toolbelt.visible = false
+	dash.visible = true
+	dash.setup(float(s.get("duration", 7.0)))
+	_shift_label.text = "CORRIDOR DASH  > ROOM %d/%d" % [room_number + 1, room_count]
+	_time_ratio = 0.0
+	_layout()
+	AudioManager.stop_ambience()
+	AudioManager.play_music("runner_loop")
+	_set_banner_text("Run for the next door!")
+	_banner.reset_size()
+	_show_title("CORRIDOR DASH!")
+
+func _on_room_cleared() -> void:
+	room_view.open_exit()
+	AudioManager.play_sfx("door_whoosh")
+	AudioManager.stop_all_loops()
+	_set_banner_text("ROOM CLEAR! The door is open, head out >>" if room_number < room_count else "LAST ROOM CLEAR! Get to the door to finish your shift >>")
+	_banner.reset_size()
+	room_view.nadine.cheer(1.0)
+	room_view.pristine.say("Systems stable. For now. Move along, Chief.", "smug", 3.0)
+	get_tree().create_timer(0.9).timeout.connect(func() -> void:
+		if is_instance_valid(self) and _segment_kind == "room" and room_view.exit_open:
+			_head_to_exit()
 	)
-	room_view.pristine.say("Welcome to your shift, Chief. Try not to smudge my hull.", "skeptical", 4.0)
 
+func _head_to_exit() -> void:
+	if not room_view.exit_open or _leaving:
+		return
+	_heading_to_exit = true
+	room_view.clear_camera_focus()
+	room_view.nadine.set_working("")
+	room_view.nadine.walk_to_x(room_view.get_exit_x())
+
+func _leave_segment() -> void:
+	if _leaving:
+		return
+	_leaving = true
+	if segment_index >= plan.size() - 1:
+		# last room done: shift complete
+		level_manager.finish_shift_now(true)
+		return
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 1.0, 0.35)
+	tw.tween_callback(func() -> void: _start_next_segment())
+
+func _fade_in() -> void:
+	_fade.color.a = 1.0
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 0.0, 0.4)
+
+func _show_title(text: String) -> void:
+	_title_card.text = text
+	_title_card.modulate.a = 1.0
+	var tw := create_tween()
+	tw.tween_interval(1.1)
+	tw.tween_property(_title_card, "modulate:a", 0.0, 0.5)
+
+func _on_dash_hit(kind: String) -> void:
+	level_manager.runner_hits += 1
+	level_manager.apply_damage(dash.damage_per_hit)
+	var lines: Array[String] = ["Ouch. That will buff out. Probably.", "Jump OVER the steam, Chief. Over.", "Those cables bite. Slide, don't hug!"]
+	room_view.pristine.say(lines[randi() % lines.size()], "annoyed", 2.0)
 
 func _process(delta: float) -> void:
-	if level_manager != null:
-		level_manager.step_shift(delta)
+	if level_manager == null:
+		return
+	if _segment_kind == "dash":
+		if level_manager.shift_active:
+			level_manager.shift_elapsed += delta
+		_update_timer_label()
+		return
+	level_manager.step_shift(delta)
+	_update_timer_label()
+	var n: NadineCharacter = room_view.nadine
+	# footsteps on the metal deck
+	if n.is_moving():
+		_step_timer -= delta
+		if _step_timer <= 0.0:
+			_step_timer = 0.27
+			AudioManager.play_sfx("footstep")
+	# sparking relays crackle now and then
+	_spark_timer -= delta
+	if _spark_timer <= 0.0:
+		_spark_timer = randf_range(0.6, 1.5)
+		for inst in level_manager.failure_manager.get_active_failures():
+			if (inst["data"] as FailureData).failure_id in ["sparking_panel", "cable_loose"]:
+				AudioManager.play_sfx("spark_zap")
+				break
+	# heading out of a cleared room
+	if _heading_to_exit and not n.is_moving():
+		_heading_to_exit = false
+		_leave_segment()
 	# Nadine: once she reaches the malfunction she turns to it and gets to work
-	if _engaged_anchor != "" and room_view != null and room_view.nadine != null:
-		var n: NadineCharacter = room_view.nadine
-		if not n.is_moving():
-			n.face_towards(room_view.get_anchor_position(_engaged_anchor).x)
-			if not n.is_working():
-				n.set_working(level_manager.selected_tool_id)
+	if _engaged_anchor != "" and not n.is_moving():
+		n.face_towards(room_view.get_anchor_world(_engaged_anchor).x)
+		if not n.is_working():
+			n.set_working(level_manager.selected_tool_id)
 	# Pipe close-up opens as Nadine arrives (or after a short beat)
 	if not _pending_closeup.is_empty():
 		_closeup_wait -= delta
-		if _closeup_wait <= 0.0 or not room_view.nadine.is_moving():
-			var inst: Dictionary = _pending_closeup
+		if _closeup_wait <= 0.0 or not n.is_moving():
+			var inst2: Dictionary = _pending_closeup
 			_pending_closeup = {}
-			if not level_manager.failure_manager.get_failure_by_instance_id(int(inst["instance_id"])).is_empty():
-				tape_closeup.open_for_failure(inst)
+			if not level_manager.failure_manager.get_failure_by_instance_id(int(inst2["instance_id"])).is_empty():
+				tape_closeup.open_for_failure(inst2)
+	# chain-reaction shake
+	if _shake_t > 0.0:
+		_shake_t = maxf(0.0, _shake_t - delta)
+		room_view.position = Vector2(sin(_shake_t * 90.0), cos(_shake_t * 70.0)) * 8.0 * _shake_t
+	elif room_view.position != Vector2.ZERO:
+		room_view.position = Vector2.ZERO
+
+func _update_timer_label() -> void:
+	var t: int = int(level_manager.shift_elapsed)
+	_timer_label.text = "%d:%02d" % [t / 60, t % 60]
+	if _segment_kind == "dash" and dash != null:
+		_time_ratio = clampf(dash.distance / maxf(1.0, dash.length_px), 0.0, 1.0)
+		_shift_fill.size.x = maxf(0.0, (_shift_bg.size.x - 6.0) * _time_ratio)
 
 func _refresh_room_failures() -> void:
 	var active_list: Array[Dictionary] = level_manager.failure_manager.get_active_failures()
@@ -393,6 +613,8 @@ func _refresh_room_failures() -> void:
 	_update_banner()
 
 func _update_banner() -> void:
+	if room_view.exit_open:
+		return
 	_set_banner_text(_banner_text())
 	if _banner != null:
 		_banner.reset_size()
@@ -414,6 +636,20 @@ func _banner_text() -> String:
 		return "%s! Touch it to fix it." % f_data.display_name.to_upper()
 	return "%d MALFUNCTIONS! Touch one to fix it." % active_list.size()
 
+## Player tapped the floor: Nadine walks there (and lets go of what she was fixing).
+func _on_walk_requested(world_x: float) -> void:
+	if tape_closeup.is_open():
+		return
+	if _engaged_iid != -1:
+		level_manager.cancel_failure_repair(_engaged_iid)
+		in_room.release_active()
+		_engaged_iid = -1
+		_engaged_anchor = ""
+	room_view.clear_camera_focus()
+	room_view.nadine.set_working("")
+	room_view.nadine.walk_to_x(clampf(world_x, 60.0, room_view.room_w - 60.0))
+	_update_banner()
+
 ## Player touched a malfunction: auto-pick the tool, send Nadine, start the right repair.
 func _engage_failure(instance_id: int) -> void:
 	if tape_closeup.is_open():
@@ -427,11 +663,13 @@ func _engage_failure(instance_id: int) -> void:
 	if not bool(check.get("ok", false)):
 		return
 	_engaged_iid = instance_id
-	_engaged_anchor = String(inst.get("anchor_id", "pipe_joint"))
+	_engaged_anchor = String(inst.get("anchor_id", ""))
+	_heading_to_exit = false
 	var f_data: FailureData = inst["data"]
 	var n: NadineCharacter = room_view.nadine
 	n.set_working("")
 	n.walk_to_x(room_view.get_work_x(_engaged_anchor))
+	room_view.set_camera_focus(room_view.get_anchor_world(_engaged_anchor).x - 40.0)
 	AudioManager.play_sfx("tool_select")
 	if f_data != null and f_data.repair_style == "closeup":
 		in_room.release_active()
@@ -439,19 +677,33 @@ func _engage_failure(instance_id: int) -> void:
 		_closeup_wait = 0.45
 	else:
 		in_room.begin_repair(inst)
+		var rc: RepairController = in_room.get_active_controller()
+		if rc != null and level_manager.available_tools.has(rc.get_stage_tool()):
+			level_manager.selected_tool_id = rc.get_stage_tool()
+			level_manager.tool_selected.emit(level_manager.selected_tool_id)
 	_update_banner()
+
+func _on_failure_spawned(inst: Dictionary) -> void:
+	var fd: FailureData = inst["data"]
+	if fd.loop_sfx != "":
+		AudioManager.start_loop("f%d" % int(inst["instance_id"]), fd.loop_sfx, -10.0)
+	_refresh_room_failures()
 
 func _on_repair_succeeded(instance_id: int, elapsed_sec: float) -> void:
 	var inst: Dictionary = level_manager.failure_manager.get_failure_by_instance_id(instance_id)
 	if inst.is_empty():
 		return
-	var anchor_id: String = String(inst.get("anchor_id", "pipe_joint"))
+	var anchor_id: String = String(inst.get("anchor_id", ""))
+	var fd: FailureData = inst["data"]
+	if fd.failure_id in ["sparking_panel", "cable_loose", "fuse_blown"]:
+		AudioManager.play_sfx("relay_fixed_click")
 	level_manager.complete_failure_repair(instance_id, elapsed_sec)
-	room_view.mark_anchor_patched(anchor_id)
+	room_view.mark_anchor_patched(anchor_id, fd.failure_id)
 	in_room.clear_instance(instance_id)
 	if instance_id == _engaged_iid:
 		_engaged_iid = -1
 		_engaged_anchor = ""
+		room_view.clear_camera_focus()
 	room_view.nadine.cheer(1.0)
 	SaveManager.set_tutorial_completed(true)
 	_refresh_room_failures()
@@ -462,7 +714,24 @@ func _on_closeup_closed(instance_id: int) -> void:
 		_engaged_iid = -1
 		_engaged_anchor = ""
 		room_view.nadine.set_working("")
+		room_view.clear_camera_focus()
 	_update_banner()
+
+func _on_chain_reaction(_source: Dictionary, spawned: Dictionary, _quip: String) -> void:
+	var anchor_id: String = String(spawned.get("anchor_id", ""))
+	in_room.add_floater(room_view.get_anchor_position(anchor_id) + Vector2(0, -110), "CHAIN REACTION!", Color(0.4, 1.0, 1.0))
+	_shake_t = 0.5
+	AudioManager.trigger_haptic(60)
+	_refresh_room_failures()
+	if _engaged_iid == -1:
+		_set_banner_text("CHAIN REACTION! %s - touch it to fix it." % (spawned["data"] as FailureData).display_name.to_upper())
+		_banner.reset_size()
+
+func _on_room_progress(fixed: int, total: int) -> void:
+	if _segment_kind != "room":
+		return
+	_time_ratio = clampf(float(fixed) / maxf(1.0, float(total)), 0.0, 1.0)
+	_shift_fill.size.x = maxf(0.0, (_shift_bg.size.x - 6.0) * _time_ratio)
 
 func _on_health_changed(current_h: float, max_h: float) -> void:
 	_health_ratio = clampf(current_h / maxf(1.0, max_h), 0.0, 1.0)
@@ -473,14 +742,14 @@ func _on_health_changed(current_h: float, max_h: float) -> void:
 		_health_fill.color = Color(0.98, 0.72, 0.14)
 	else:
 		_health_fill.color = Color(0.95, 0.20, 0.18)
+	if _health_ratio < 0.25 and level_manager != null and level_manager.shift_active:
+		AudioManager.start_loop("health_low", "health_low_alarm", -12.0)
+	else:
+		AudioManager.stop_loop("health_low")
 
-func _on_timer_changed(rem_sec: float, tot_sec: float) -> void:
-	var total_i: int = int(ceil(rem_sec))
-	var mins: int = total_i / 60
-	var secs: int = total_i % 60
-	_timer_label.text = "%d:%02d" % [mins, secs]
-	_time_ratio = clampf(rem_sec / maxf(1.0, tot_sec), 0.0, 1.0)
-	_shift_fill.size.x = maxf(0.0, (_shift_bg.size.x - 6.0) * _time_ratio)
+
+func _on_timer_changed(_rem_sec: float, _tot_sec: float) -> void:
+	_update_timer_label()
 
 func _on_score_changed(new_score: int) -> void:
 	_score_label.text = "%d pts" % new_score
@@ -491,7 +760,8 @@ func _on_tool_selected(tool_id: String) -> void:
 		room_view.nadine.held_tool_id = tool_id
 
 func _on_failure_resolved(inst: Dictionary, pts: int, callout: String) -> void:
-	var anchor_id: String = String(inst.get("anchor_id", "pipe_joint"))
+	var anchor_id: String = String(inst.get("anchor_id", ""))
+	AudioManager.stop_loop("f%d" % int(inst["instance_id"]))
 	in_room.add_floater(room_view.get_anchor_position(anchor_id) + Vector2(0, -40), "+%d %s" % [pts, callout])
 	_refresh_room_failures()
 
@@ -501,4 +771,7 @@ func _on_pristine_message(text: String, mood: String) -> void:
 
 func _on_shift_finished(results: Dictionary) -> void:
 	tape_closeup.visible = false
+	AudioManager.stop_all_loops()
+	AudioManager.stop_ambience()
+	AudioManager.stop_music()
 	GameManager.show_shift_results(results)

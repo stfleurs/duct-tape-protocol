@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "pipe_frozen"
+display_name = "Frozen Coolant Pipe"
+failure_type = "pipe"
+required_tool_id = "duct_tape"
+severity = 2
+time_before_escalation = 15.0
+base_health_drain_per_sec = 1.2
+escalated_health_drain_per_sec = 2.8
+repair_duration_target = 4.0
+required_repair_steps = 4
+base_score_reward = 200
+spawn_anchor_id = "pipe_joint"
+badge_type = "exclamation"
+repair_header_text = "THAW IT, THEN TAPE!"
+repair_instruction = "Rub back and forth to thaw the ice, then swipe tape on!"
+repair_gesture = "rub_tape"
+anchor_kind = "pipe"
+prop_art_broken = "pipe_frozen"
+prop_art_fixed = "pipe_segment"
+spawn_sfx = "steam_hiss_loop"
+loop_sfx = ""
+chain_failure_ids = PackedStringArray("pipe_hairline")
+chain_chance = 0.35
+chain_quips = PackedStringArray("Thawing it cracked the pipe next door. Thermodynamics hates you.")
+pristine_spawn_lines = PackedStringArray("Cryo line freezing over. Do not lick it.", "Ice on my coolant pipe. How quaint. How DEADLY.")
+pristine_resolved_lines = PackedStringArray("Thawed by friction. Like a caveman. A competent caveman.", "Ice cleared. My pipes thank you. I do not.")

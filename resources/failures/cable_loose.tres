@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "cable_loose"
+display_name = "Loose Power Cable"
+failure_type = "electrical"
+required_tool_id = "duct_tape"
+severity = 2
+time_before_escalation = 12.0
+base_health_drain_per_sec = 1.3
+escalated_health_drain_per_sec = 3.0
+repair_duration_target = 2.0
+required_repair_steps = 2
+base_score_reward = 160
+spawn_anchor_id = "cable_socket"
+badge_type = "lightning"
+repair_header_text = "PLUG IT BACK IN!"
+repair_instruction = "Drag the loose cable end into its socket!"
+repair_gesture = "plug"
+anchor_kind = "cable"
+prop_art_broken = "cable_loose"
+prop_art_fixed = "cable_plugged"
+spawn_sfx = "spark_zap_1"
+loop_sfx = ""
+chain_failure_ids = PackedStringArray("fuse_blown", "sparking_panel")
+chain_chance = 0.35
+chain_quips = PackedStringArray("Power surge! Somewhere a fuse just gave up on life.", "You plugged it in. The rest of the grid noticed. Loudly.")
+pristine_spawn_lines = PackedStringArray("A cable is flopping around like a space eel.", "Power conduit disconnected. Please do not hug it.")
+pristine_resolved_lines = PackedStringArray("Plugged in. Even a toddler... well done, Chief.", "Connection restored. My lights stop flickering. Mostly.")

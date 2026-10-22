@@ -7,6 +7,7 @@ var _settings_modal: Control
 var _bleed_off: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
+	AudioManager.play_music("menu_theme")
 	_bleed_off = DuctTapeUI.fit_design_canvas(self)
 	get_viewport().size_changed.connect(func() -> void:
 		_bleed_off = DuctTapeUI.fit_design_canvas(self)

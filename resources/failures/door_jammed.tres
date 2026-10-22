@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "door_jammed"
+display_name = "Jammed Hatch"
+failure_type = "mechanical"
+required_tool_id = "wrench"
+severity = 2
+time_before_escalation = 14.0
+base_health_drain_per_sec = 1.0
+escalated_health_drain_per_sec = 2.4
+repair_duration_target = 3.0
+required_repair_steps = 3
+base_score_reward = 170
+spawn_anchor_id = "hatch"
+badge_type = "exclamation"
+repair_header_text = "PRY IT OPEN!"
+repair_instruction = "Hold on the hatch to hook the wrench, then drag to pry!"
+repair_gesture = "pry"
+anchor_kind = "hatch"
+prop_art_broken = "door_jammed"
+prop_art_fixed = "door_ok"
+spawn_sfx = "spark_zap_2"
+loop_sfx = ""
+chain_failure_ids = PackedStringArray("cable_loose")
+chain_chance = 0.3
+chain_quips = PackedStringArray("You yanked the hatch so hard a cable popped out. Strong AND destructive.")
+pristine_spawn_lines = PackedStringArray("Hatch 3 is stuck. It is having a moment.", "The door refuses to open. I relate.")
+pristine_resolved_lines = PackedStringArray("Pried open. My doors are not crowbar-compatible, yet here we are.", "Hatch freed. Please stop hitting my architecture.")

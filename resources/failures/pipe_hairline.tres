@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "pipe_hairline"
+display_name = "Hairline Pipe Crack"
+failure_type = "pipe"
+required_tool_id = "duct_tape"
+severity = 1
+time_before_escalation = 14.0
+base_health_drain_per_sec = 0.9
+escalated_health_drain_per_sec = 2.0
+repair_duration_target = 1.2
+required_repair_steps = 1
+base_score_reward = 90
+spawn_anchor_id = "pipe_joint"
+badge_type = "exclamation"
+repair_header_text = "QUICK STRIP!"
+repair_instruction = "One quick swipe of tape along the crack!"
+repair_gesture = "slash"
+anchor_kind = "pipe"
+prop_art_broken = "pipe_hairline"
+prop_art_fixed = "pipe_segment"
+spawn_sfx = "steam_hiss_loop"
+loop_sfx = ""
+chain_failure_ids = PackedStringArray("pipe_hairline")
+chain_chance = 0.15
+chain_quips = PackedStringArray("Oh look, its little sibling. Pipes run in families, Chief.")
+pristine_spawn_lines = PackedStringArray("A microscopic imperfection. Kill it with fire. Or... tape.", "Hairline fracture on deck. It's basically a scratch.", "Do you hear that whistle? That is my hull crying.")
+pristine_resolved_lines = PackedStringArray("One strip. Barbaric efficiency.", "Fine. Hairline sealed. My dignity is not.", "Faster than my diagnostics. I will be deleting that log.")

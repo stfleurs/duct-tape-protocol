@@ -16,6 +16,11 @@ func _ready() -> void:
 	_test_auto_tool_select()
 	_test_room_layout_fills_tall_screens()
 	_test_in_room_repair_flow()
+	_test_new_malfunction_gestures()
+	_test_room_progression()
+	_test_chain_reaction()
+	_test_runner()
+	_test_audio()
 
 	print("===============================================")
 	print("Tests Passed: %d | Tests Failed: %d" % [_passed, _failed])
@@ -275,28 +280,38 @@ func _test_auto_tool_select() -> void:
 	lm.free()
 
 func _test_room_layout_fills_tall_screens() -> void:
-	print("\n--- 10. Room fills tall phones (no grey band) ---")
-	var room := EngineRoomView.new()
-	add_child(room)
+	print("\n--- 10. Wide rooms fill tall phones (no grey band), camera follows Nadine ---")
+	var room := ShipRoomView.new()
 	room.top_inset = 104.0
-	room.layout_room(Vector2(720, 1280))
-	var floor_short: float = room.floor_y
-	var ok_short: bool = true
-	for a in room.anchor_positions.keys():
-		var p: Vector2 = room.anchor_positions[a]
-		ok_short = ok_short and p.y > 104.0 and p.y < 1280.0 and p.x > 0.0 and p.x < 720.0
-	room.layout_room(Vector2(720, 1600)) # 1080x2400 (20:9) phone with stretch aspect "expand"
-	var ok_tall: bool = true
-	for a in room.anchor_positions.keys():
-		var p: Vector2 = room.anchor_positions[a]
-		ok_tall = ok_tall and p.y > 104.0 and p.y < 1600.0 and p.x > 0.0 and p.x < 720.0
-	_assert(ok_short and ok_tall, "All malfunctions sit inside the room on 16:9 and 20:9 screens")
-	var bg: Texture2D = ArtLib.tex("engine_room_bg")
-	if bg != null:
-		var cr: Rect2 = ArtLib.cover_rect(bg.get_size(), Rect2(0, 104, 720, 1600 - 104))
-		_assert(cr.encloses(Rect2(0, 104, 720, 1600 - 104)), "On a 20:9 phone the painted room covers the whole screen")
-	else:
-		_assert(room.floor_y > floor_short + 200.0 and room.floor_y > 1600.0 - 200.0, "On a 20:9 phone the room floor moves down to the bottom of the screen")
+	add_child(room)
+	var ok_inside: bool = true
+	var all_wide: bool = true
+	var floor_ok: bool = true
+	for rid in ShipRooms.ROOMS.keys():
+		room.load_room(rid)
+		for sz in [Vector2(720, 1280), Vector2(720, 1600)]:
+			room.layout_room(sz)
+			all_wide = all_wide and room.room_w >= sz.x * 1.5
+			floor_ok = floor_ok and room.floor_y > sz.y * 0.55 and room.floor_y < sz.y
+			for a in room.anchor_positions.keys():
+				var p: Vector2 = room.anchor_positions[a]
+				ok_inside = ok_inside and p.y > 104.0 and p.y < sz.y and p.x > 0.0 and p.x < room.room_w
+	_assert(ok_inside, "All malfunction spots sit inside every room on 16:9 and 20:9 screens")
+	_assert(all_wide, "Every room is wider than the screen (about two screens to walk through)")
+	_assert(floor_ok, "On a 20:9 phone the room floor sits low on the screen (room fills the height)")
+	room.load_room("cargo_bay")
+	room.layout_room(Vector2(720, 1600))
+	room.nadine.position.x = room.room_w - 80.0
+	room.snap_camera()
+	var right_ok: bool = is_equal_approx(room.cam_x, room.room_w - 720.0)
+	room.nadine.position.x = 40.0
+	room.snap_camera()
+	_assert(right_ok and is_equal_approx(room.cam_x, 0.0), "Camera follows Nadine and stops at the room's walls (limits)")
+	room.nadine.position.x = room.room_w * 0.5
+	room.cam_x = 0.0
+	room._process(0.1)
+	var mid_target: float = room.camera_target()
+	_assert(room.cam_x > 0.0 and room.cam_x < mid_target, "Camera glides toward Nadine (smoothing, no snap)")
 	_assert(String(ProjectSettings.get_setting("display/window/stretch/aspect")) == "expand", "Stretch aspect is 'expand' (no letterbox / grey band)")
 	room.free()
 
@@ -306,16 +321,21 @@ func _test_in_room_repair_flow() -> void:
 	var gs: Node = packed.instantiate()
 	add_child(gs)
 	var lm: LevelManager = gs.level_manager
-	var room: EngineRoomView = gs.room_view
+	var room: ShipRoomView = gs.room_view
 	var layer: InRoomRepair = gs.in_room
+	lm.chain_enabled = false
 	room.layout_room(Vector2(720, 1280))
-	lm.step_shift(2.0) # first failure: pipe leak
-	var pipe_inst: Dictionary = lm.failure_manager.get_failure_at_anchor("pipe_joint")
-	_assert(not pipe_inst.is_empty(), "Pipe leak spawns first")
+	lm.step_shift(2.0) # first failure of the shift: pipe leak, at a random pipe spot
+	var pipe_inst: Dictionary = {}
+	for fi in lm.failure_manager.get_active_failures():
+		if String(fi["failure_id"]) == "pipe_leak":
+			pipe_inst = fi
+	_assert(not pipe_inst.is_empty() and room.get_anchor_kind(String(pipe_inst["anchor_id"])) == "pipe", "Pipe leak spawns first, on one of the room's pipe spots")
+	var pa: String = String(pipe_inst.get("anchor_id", ""))
 
 	# Pipe: touch -> tape close-up -> over/under swipes
-	layer.pointer_pressed(room.get_anchor_position("pipe_joint"))
-	layer.pointer_released(room.get_anchor_position("pipe_joint"))
+	layer.pointer_pressed(room.get_anchor_position(pa))
+	layer.pointer_released(room.get_anchor_position(pa))
 	gs._process(0.5) # Nadine runs over, close-up opens
 	var cu: TapeCloseup = gs.tape_closeup
 	_assert(cu.is_open() and lm.selected_tool_id == "duct_tape", "Touching the pipe opens the quick tape close-up with tape in hand")
@@ -336,9 +356,10 @@ func _test_in_room_repair_flow() -> void:
 	var spark_inst: Dictionary = lm.failure_manager.spawn_failure("sparking_panel")
 	gs._refresh_room_failures()
 	lm.select_tool("wrench")
-	var pc: Vector2 = room.get_anchor_position("electrical_panel")
+	var sa: String = String(spark_inst.get("anchor_id", ""))
+	var pc: Vector2 = room.get_anchor_position(sa)
 	layer.pointer_pressed(pc)
-	_assert(layer.active_anchor_id == "electrical_panel" and lm.selected_tool_id == "duct_tape", "Touching the relay starts an in-room repair and grabs the tape")
+	_assert(sa != "" and layer.active_anchor_id == sa and lm.selected_tool_id == "duct_tape", "Touching the relay starts an in-room repair and grabs the tape")
 	var n: int = 0
 	while lm.repairs_completed < 2 and n < 60:
 		var side: float = -1.0 if n % 2 == 0 else 1.0
@@ -348,9 +369,9 @@ func _test_in_room_repair_flow() -> void:
 	_assert(lm.repairs_completed == 2, "Relay fixed in the room with a zigzag (no popup)")
 
 	# Valve: touch it, spin the wrench
-	lm.failure_manager.spawn_failure("overheating_engine")
+	var valve_inst: Dictionary = lm.failure_manager.spawn_failure("overheating_engine")
 	gs._refresh_room_failures()
-	var vc: Vector2 = room.get_anchor_position("reactor_core")
+	var vc: Vector2 = room.get_anchor_position(String(valve_inst.get("anchor_id", "")))
 	layer.pointer_pressed(vc + Vector2(60, 0))
 	_assert(lm.selected_tool_id == "wrench", "Touching the valve grabs the wrench automatically")
 	var k: int = 0
@@ -364,3 +385,334 @@ func _test_in_room_repair_flow() -> void:
 	remove_child(gs)
 	gs.free()
 	SaveManager.reset_to_defaults()
+
+func _test_new_malfunction_gestures() -> void:
+	print("\n--- 12. v0.3 malfunction types: each has its own gesture ---")
+	var c := Vector2(800, 900)
+	var ids: Array[String] = ShipRooms.FAILURE_FILES
+	var loaded: int = 0
+	var gestures: Dictionary = {}
+	for fid in ids:
+		var fd: FailureData = ShipRooms.load_failure(fid)
+		if fd != null and fd.failure_id == fid:
+			loaded += 1
+			gestures[fd.get_repair_gesture()] = true
+	_assert(loaded == 11 and gestures.size() == 11, "11 malfunction types load from .tres, each with its own gesture (%d types, %d gestures)" % [loaded, gestures.size()])
+
+	# hairline: one quick swipe along the crack
+	var rc := RepairController.new()
+	rc.start_gesture_repair("slash", 1, c, 170.0, Vector2.RIGHT, 120.0)
+	rc.begin_pointer(c + Vector2(0, -100))
+	rc.move_pointer(c + Vector2(0, 100))
+	rc.end_pointer()
+	var across_nothing: bool = not rc.is_completed
+	rc.begin_pointer(c + Vector2(-110, 0))
+	for x in range(-110, 111, 20):
+		rc.move_pointer(c + Vector2(x, 4))
+	rc.end_pointer()
+	_assert(across_nothing and rc.is_completed, "Hairline crack: ONE swipe along it seals it (a swipe across does not)")
+
+	# joint leak: wrench spin first, then tape
+	rc = RepairController.new()
+	rc.start_gesture_repair("wrench_tape", 4, c, 150.0, Vector2.RIGHT, 130.0)
+	_assert(rc.gesture == "spin" and rc.get_stage_tool() == "wrench", "Joint leak starts with the wrench")
+	rc.begin_pointer(c + Vector2(-150, 0))
+	for x in range(-150, 151, 20):
+		rc.move_pointer(c + Vector2(x, 0))
+	var swipe_first_nothing: bool = rc.current_steps_completed == 0
+	rc.end_pointer()
+	rc.begin_pointer(c + Vector2(80, 0))
+	var n: int = 0
+	while rc.gesture == "spin" and n < 400:
+		n += 1
+		var a: float = float(n) * TAU / 36.0
+		rc.move_pointer(c + Vector2(cos(a), sin(a)) * 80.0)
+	rc.end_pointer()
+	var switched: bool = rc.gesture == "swipe" and rc.get_stage_tool() == "duct_tape" and not rc.is_completed
+	for i in range(3):
+		rc.begin_pointer(c + Vector2(-150, 0))
+		for x in range(-150, 151, 20):
+			rc.move_pointer(c + Vector2(x, 2))
+		rc.end_pointer()
+	_assert(swipe_first_nothing and switched and rc.is_completed, "Joint leak: two steps, wrench spin THEN tape swipe")
+
+	# frozen pipe: rub to thaw, then tape
+	rc = RepairController.new()
+	rc.start_gesture_repair("rub_tape", 4, c, 140.0, Vector2.RIGHT, 130.0)
+	rc.begin_pointer(c)
+	n = 0
+	while rc.gesture == "rub" and n < 200:
+		n += 1
+		rc.move_pointer(c + Vector2(50.0 if n % 2 == 0 else -50.0, 0))
+	rc.end_pointer()
+	var thawed: bool = rc.gesture == "swipe" and n < 60
+	for i in range(3):
+		rc.begin_pointer(c + Vector2(-150, 0))
+		for x in range(-150, 151, 20):
+			rc.move_pointer(c + Vector2(x, 2))
+		rc.end_pointer()
+	_assert(thawed and rc.is_completed, "Frozen pipe: rub back and forth to thaw, then tape")
+
+	# loose cable: drag the end into the socket
+	rc = RepairController.new()
+	rc.start_gesture_repair("plug", 2, c, 150.0, Vector2.ZERO, 120.0)
+	rc.socket_point = c + Vector2(160, -120)
+	rc.begin_pointer(c + Vector2(-400, 0)) # nowhere near the cable end
+	rc.move_pointer(rc.socket_point)
+	rc.end_pointer()
+	var far_nothing: bool = rc.progress == 0.0
+	rc.begin_pointer(c + Vector2(5, 5))
+	for i in range(11):
+		rc.move_pointer(c.lerp(rc.socket_point, float(i) / 10.0))
+	rc.end_pointer()
+	_assert(far_nothing and rc.is_completed and rc.plug_end_pos == rc.socket_point, "Loose cable: drag its end into the socket")
+
+	# blown fuse: tap to pull, tap to insert
+	rc = RepairController.new()
+	rc.start_gesture_repair("fuse", 2, c, 150.0, Vector2.ZERO, 120.0)
+	rc.register_fallback_tap()
+	var pulled: bool = rc.current_steps_completed == 1 and not rc.is_completed
+	rc.register_fallback_tap()
+	_assert(pulled and rc.is_completed, "Blown fuse: tap to pull it, tap again to insert the new one")
+
+	# clogged vent: rapid taps; stopping lets it clog back up
+	rc = RepairController.new()
+	rc.start_gesture_repair("rapid_tap", 7, c, 150.0, Vector2.ZERO, 120.0)
+	for i in range(3):
+		rc.register_fallback_tap()
+	var after3: float = rc.progress
+	rc.update_timer(5.0)
+	var decayed: bool = rc.progress < after3
+	for i in range(7):
+		rc.register_fallback_tap()
+	_assert(decayed and rc.is_completed, "Clogged vent: rapid taps clear it (and it clogs back if you stop)")
+
+	# hull breach: X of tape
+	rc = RepairController.new()
+	rc.start_gesture_repair("x_tape", 2, c, 150.0, Vector2.ZERO, 130.0)
+	rc.begin_pointer(c + Vector2(-150, 0))
+	for x in range(-150, 151, 20):
+		rc.move_pointer(c + Vector2(x, 0))
+	rc.end_pointer()
+	var flat_partial: bool = rc.current_steps_completed == 0
+	rc.begin_pointer(c + Vector2(-110, -110))
+	for i in range(12):
+		rc.move_pointer(c + Vector2(-110, -110) + Vector2(20, 20) * float(i))
+	rc.end_pointer()
+	var one_diag: bool = rc.current_steps_completed == 1
+	rc.begin_pointer(c + Vector2(-110, 110))
+	for i in range(12):
+		rc.move_pointer(c + Vector2(-110, 110) + Vector2(20, -20) * float(i))
+	rc.end_pointer()
+	_assert(flat_partial and one_diag and rc.is_completed, "Hull breach: two diagonal swipes (an X of tape) seal it")
+	var hb: FailureData = ShipRooms.load_failure("hull_breach")
+	_assert(hb.urgent and hb.time_before_escalation < 8.0 and hb.base_health_drain_per_sec > 2.0, "Hull breach is urgent: short fuse, heavy drain")
+
+	# jammed hatch: hold to hook, then drag
+	rc = RepairController.new()
+	rc.start_gesture_repair("pry", 3, c, 120.0, Vector2.RIGHT, 120.0)
+	rc.begin_pointer(c)
+	rc.move_pointer(c + Vector2(200, 0))
+	rc.end_pointer()
+	var no_hold_nothing: bool = rc.progress == 0.0
+	rc.begin_pointer(c)
+	rc.update_timer(0.4)
+	var hooked: bool = rc.is_hooked()
+	for i in range(30):
+		rc.move_pointer(c + Vector2(15.0 * float(i % 10), 0))
+	rc.end_pointer()
+	_assert(no_hold_nothing and hooked and rc.is_completed, "Jammed hatch: press and hold to hook the wrench, then drag to pry")
+
+	# every new gesture still has the tap fallback
+	for g in ["slash", "wrench_tape", "rub_tape", "plug", "fuse", "rapid_tap", "x_tape", "pry"]:
+		rc = RepairController.new()
+		rc.start_gesture_repair(g, 4 if g in ["wrench_tape", "rub_tape"] else (7 if g == "rapid_tap" else 2), c, 150.0, Vector2.RIGHT, 120.0)
+		var taps: int = 0
+		while not rc.is_completed and taps < 50:
+			rc.register_fallback_tap()
+			taps += 1
+		_assert(rc.is_completed and taps <= 8, "Fallback: tapping repeatedly completes the %s repair" % g)
+
+	# random crack looks
+	var fm := FailureManager.new()
+	fm.configure(ShipRooms.load_all_failures(), 6)
+	fm.set_anchor_pool(ShipRooms.get_anchor_pool("engine_room"))
+	var looks: Dictionary = {}
+	var spots: Dictionary = {}
+	for i in range(4):
+		var inst: Dictionary = fm.spawn_failure("pipe_hairline")
+		if not inst.is_empty():
+			looks[str(inst["variant"])] = true
+			spots[String(inst["anchor_id"])] = true
+	_assert(looks.size() >= 3 and spots.size() >= 3, "Cracks get random rotation/size/mirror and land on different pipe spots")
+
+func _test_room_progression() -> void:
+	print("\n--- 13. Multi-room shifts ---")
+	var plan: Array[Dictionary] = ShipRooms.build_plan("engine_room", 1, 7)
+	var plan4: Array[Dictionary] = ShipRooms.build_plan("bridge", 3, 7)
+	var dashes: int = 0
+	for s in plan:
+		if String(s["type"]) == "dash":
+			dashes += 1
+			_assert(float(s["duration"]) >= 5.0 and float(s["duration"]) <= 10.0, "Corridor dash lasts 5-10 s")
+	_assert(ShipRooms.count_rooms(plan) == 3 and ShipRooms.count_rooms(plan4) == 4 and dashes >= 1, "A shift is 3-4 rooms with a corridor dash between some")
+	_assert(String(plan[0]["room_id"]) == "engine_room" and String(plan4[0]["room_id"]) == "bridge", "The shift starts in the room picked on the ship map")
+	var orders: Dictionary = {}
+	for sd in range(12):
+		var p: Array[Dictionary] = ShipRooms.build_plan("engine_room", 2, sd)
+		var key: String = ""
+		for s2 in p:
+			key += String(s2.get("room_id", "-")) + ","
+		orders[key] = true
+	_assert(orders.size() >= 3, "Room order varies from shift to shift (%d different orders in 12 shifts)" % orders.size())
+	var last_room: Dictionary = plan4[plan4.size() - 1]
+	_assert(int(last_room["quota"]) > int(plan4[0]["quota"]) and float(last_room["difficulty"]) > float(plan4[0]["difficulty"]), "Later rooms have more to fix and get harder")
+
+	# LevelManager: a room is cleared when its quota is fixed
+	var lm := LevelManager.new()
+	add_child(lm)
+	lm.setup_shift(GameManager.load_level_data("engine_room"), [load("res://resources/tools/duct_tape.tres") as ToolData, load("res://resources/tools/wrench.tres") as ToolData], ShipRooms.load_all_failures())
+	lm.chain_enabled = false
+	var cleared: Array[bool] = [false]
+	lm.room_cleared.connect(func() -> void: cleared[0] = true)
+	var room: Dictionary = ShipRooms.get_room("cargo_bay")
+	lm.begin_room("cargo_bay", PackedStringArray(room["pool"]), ShipRooms.get_anchor_pool("cargo_bay"), 4, 0.6, 3)
+	var guard: int = 0
+	var types: Dictionary = {}
+	while not cleared[0] and guard < 2000:
+		guard += 1
+		lm.step_shift(0.25)
+		for inst in lm.failure_manager.get_active_failures():
+			types[String(inst["failure_id"])] = true
+			lm.complete_failure_repair(int(inst["instance_id"]), 1.0)
+	_assert(cleared[0] and lm.room_fixed == 4 and lm.rooms_cleared == 1, "Fixing the room's quota clears it (door can open)")
+	var pool_ok: bool = true
+	for fid in types.keys():
+		pool_ok = pool_ok and PackedStringArray(room["pool"]).has(fid)
+	_assert(pool_ok, "Each room spawns from its own themed pool")
+	var hp: float = lm.current_health
+	lm.apply_damage(6.0)
+	_assert(is_equal_approx(lm.current_health, hp - 6.0) and lm.shift_active, "A runner hit costs a bit of health, no instant death")
+	lm.free()
+
+	# Gameplay screen walks through the plan: room -> dash -> room
+	var gs: Node = (load(GameManager.SCENE_GAMEPLAY) as PackedScene).instantiate()
+	add_child(gs)
+	var glm: LevelManager = gs.level_manager
+	_assert(gs._segment_kind == "room" and gs.room_number == 1 and AudioManager.get_music_name() == "engine_room_loop", "Shift opens in room 1 with the engine-room music")
+	_assert(String(gs._shift_label.text).begins_with("ROOM 1/"), "HUD shows the room name and progress (Room 1/N)")
+	glm.chain_enabled = false
+	guard = 0
+	while not glm.room_is_clear and guard < 2000:
+		guard += 1
+		glm.step_shift(0.25)
+		for inst in glm.failure_manager.get_active_failures():
+			gs._on_repair_succeeded(int(inst["instance_id"]), 1.0)
+	_assert(glm.room_is_clear and gs.room_view.exit_open, "Room clear opens the exit door")
+	gs._start_next_segment()
+	_assert(gs._segment_kind == "dash" and gs.dash.visible and gs.dash.running and AudioManager.get_music_name() == "runner_loop", "Then a corridor dash with the runner music")
+	guard = 0
+	while gs.dash.running and guard < 2000:
+		guard += 1
+		gs.dash.step_dash(1.0 / 30.0)
+	_assert(not gs.dash.running and gs.dash.finished and guard <= 10 * 30, "The dash ends at a door after a few seconds (not endless)")
+	gs._start_next_segment()
+	_assert(gs._segment_kind == "room" and gs.room_number == 2 and String(gs._shift_label.text).begins_with("ROOM 2/"), "...and on into room 2")
+	remove_child(gs)
+	gs.free()
+	AudioManager.stop_all_loops()
+	SaveManager.reset_to_defaults()
+
+func _test_chain_reaction() -> void:
+	print("\n--- 14. Chain reactions ---")
+	var lm := LevelManager.new()
+	add_child(lm)
+	lm.setup_shift(GameManager.load_level_data("engine_room"), [load("res://resources/tools/duct_tape.tres") as ToolData, load("res://resources/tools/wrench.tres") as ToolData], ShipRooms.load_all_failures())
+	var room: Dictionary = ShipRooms.get_room("engine_room")
+	lm.begin_room("engine_room", PackedStringArray(room["pool"]), ShipRooms.get_anchor_pool("engine_room"), 5, 0.5, 3)
+	lm.chain_force = true
+	var fired: Array = []
+	var quips: Array = []
+	lm.chain_reaction.connect(func(_src: Dictionary, sp: Dictionary, q: String) -> void: fired.append(sp))
+	lm.pristine_message_requested.connect(func(text: String, _m: String) -> void: quips.append(text))
+	var leak: Dictionary = lm.failure_manager.spawn_failure("pipe_leak")
+	lm.complete_failure_repair(int(leak["instance_id"]), 1.0)
+	_assert(fired.is_empty(), "A chain reaction doesn't go off instantly")
+	lm.step_shift(1.2)
+	var chained: Dictionary = fired[0] if not fired.is_empty() else {}
+	_assert(not chained.is_empty() and bool(chained.get("chain", false)) and PackedStringArray(["overheating_engine", "pipe_hairline"]).has(String(chained.get("failure_id", ""))), "Fixing the burst pipe spikes pressure: a valve goes hot / a crack opens elsewhere")
+	_assert(String(chained.get("anchor_id", "")) != String(leak["anchor_id"]) or String(chained.get("failure_id", "")) != "pipe_leak", "The chain reaction happens at another spot")
+	var data: FailureData = ShipRooms.load_failure("pipe_leak")
+	var quipped: bool = false
+	for q in quips:
+		quipped = quipped or Array(data.chain_quips).has(String(q))
+	_assert(quipped, "PRISTINE quips about the chain reaction")
+	_assert(lm.get_room_total() == 6, "Chain reactions add to what the room needs fixed")
+	var relay: Dictionary = lm.failure_manager.spawn_failure("sparking_panel")
+	fired.clear()
+	lm.complete_failure_repair(int(relay["instance_id"]), 1.0)
+	lm.step_shift(1.2)
+	_assert(not fired.is_empty() and String(fired[0]["failure_id"]) == "fuse_blown", "Fixing a relay can blow a fuse")
+	lm.free()
+
+func _test_runner() -> void:
+	print("\n--- 15. Corridor dash: jump, slide, collisions, pickups ---")
+	var d := CorridorDash.new()
+	d.size = Vector2(720, 1600)
+	add_child(d)
+	d.setup(6.0, 1, [{"x": 600.0, "type": "vent"}])
+	while d.running:
+		d.step_dash(1.0 / 60.0)
+	_assert(d.hits == 1, "Running into a steam vent without jumping is a hit")
+	d.setup(6.0, 1, [{"x": 600.0, "type": "vent"}])
+	var jumped: bool = false
+	while d.running:
+		if not jumped and 600.0 - d.runner_world_x() <= 120.0:
+			d.request_jump()
+			jumped = true
+		d.step_dash(1.0 / 60.0)
+	_assert(d.hits == 0, "Swipe up (jump) clears a steam vent")
+	d.setup(6.0, 1, [{"x": 600.0, "type": "cable"}])
+	while d.running:
+		d.step_dash(1.0 / 60.0)
+	_assert(d.hits == 1, "Running into a sparking cable without sliding is a hit")
+	d.setup(6.0, 1, [{"x": 600.0, "type": "cable"}])
+	var slid: bool = false
+	while d.running:
+		if not slid and 600.0 - d.runner_world_x() <= 100.0:
+			d.request_slide()
+			slid = true
+		d.step_dash(1.0 / 60.0)
+	_assert(d.hits == 0, "Swipe down (slide) gets under a sparking cable")
+	d.setup(6.0, 1, [{"x": 600.0, "type": "vent"}, {"x": 640.0, "type": "cable"}])
+	while d.running:
+		d.step_dash(1.0 / 60.0)
+	_assert(d.hits == 1, "A short safety blink after a hit (no double damage)")
+	d.setup(8.0, 3)
+	var t: float = 0.0
+	while d.running:
+		d.step_dash(1.0 / 60.0)
+		t += 1.0 / 60.0
+	_assert(d.pickups > 0 and t <= 8.1, "Tape and scrap get picked up; the dash ends at the door on time")
+	d.free()
+
+func _test_audio() -> void:
+	print("\n--- 16. Audio pack ---")
+	var names: Array[String] = ["menu_theme", "engine_room_loop", "runner_loop", "engine_room_ambience_loop", "tape_rip", "tape_wrap_1", "wrench_turn_1", "pipe_burst", "spark_zap_1", "door_whoosh", "footstep_metal_1", "coin_scrap_pickup", "jump_whoosh", "slide_whoosh", "repair_complete", "shift_complete_fanfare", "shift_failed"]
+	var all_ok: bool = true
+	for nm in names:
+		all_ok = all_ok and AudioManager.has_file(nm)
+	_assert(all_ok, "Sound pack files load from res://audio/")
+	var loop_ok: bool = bool(AudioManager.get_stream("engine_room_loop").get("loop")) and bool(AudioManager.get_stream("runner_loop").get("loop"))
+	_assert(loop_ok, "Music files loop")
+	_assert(AudioServer.get_bus_index("Music") > 0 and AudioServer.get_bus_index("SFX") > 0 and AudioServer.get_bus_index("Ambience") > 0, "Buses Music / Ambience / SFX exist")
+	SaveManager.set_setting("music_enabled", false)
+	AudioManager.apply_settings()
+	var muted: bool = AudioServer.is_bus_mute(AudioServer.get_bus_index("Music"))
+	SaveManager.set_setting("music_enabled", true)
+	AudioManager.apply_settings()
+	_assert(muted and not AudioServer.is_bus_mute(AudioServer.get_bus_index("Music")), "Music toggle mutes / unmutes the Music bus")
+	var every_fd_sfx: bool = true
+	for fd in ShipRooms.load_all_failures():
+		every_fd_sfx = every_fd_sfx and AudioManager.has_file(fd.spawn_sfx)
+	_assert(every_fd_sfx, "Every malfunction has a sound when it breaks")

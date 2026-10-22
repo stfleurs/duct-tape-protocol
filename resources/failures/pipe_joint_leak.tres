@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "pipe_joint_leak"
+display_name = "Leaking Pipe Joint"
+failure_type = "pipe"
+required_tool_id = "wrench"
+severity = 2
+time_before_escalation = 13.0
+base_health_drain_per_sec = 1.5
+escalated_health_drain_per_sec = 3.1
+repair_duration_target = 4.0
+required_repair_steps = 4
+base_score_reward = 210
+spawn_anchor_id = "pipe_joint"
+badge_type = "exclamation"
+repair_header_text = "TIGHTEN, THEN TAPE!"
+repair_instruction = "Spin the wrench on the joint, then swipe tape over it!"
+repair_gesture = "wrench_tape"
+anchor_kind = "pipe"
+prop_art_broken = "pipe_joint_leak"
+prop_art_fixed = "pipe_segment"
+spawn_sfx = "pipe_burst"
+loop_sfx = "steam_hiss_loop"
+chain_failure_ids = PackedStringArray("overheating_engine", "pipe_hairline")
+chain_chance = 0.45
+chain_quips = PackedStringArray("You tightened the joint, so the pressure went... somewhere else. Brilliant.", "Pressure spike! Congratulations, you moved the problem.", "Fixed one leak, inflated the rest of the plumbing. Classic.")
+pristine_spawn_lines = PackedStringArray("The flange is weeping coolant. Tighten it before it sobs.", "Joint seal failure. It's the bolts' fault, not my design.")
+pristine_resolved_lines = PackedStringArray("Torqued AND taped. Belt and suspenders. How primitive.", "Joint sealed. The bolts are now emotionally stable.")

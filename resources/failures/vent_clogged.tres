@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "vent_clogged"
+display_name = "Clogged Air Vent"
+failure_type = "vent"
+required_tool_id = "wrench"
+severity = 1
+time_before_escalation = 14.0
+base_health_drain_per_sec = 1.0
+escalated_health_drain_per_sec = 2.4
+repair_duration_target = 2.5
+required_repair_steps = 7
+base_score_reward = 140
+spawn_anchor_id = "vent"
+badge_type = "exclamation"
+repair_header_text = "BANG IT CLEAR!"
+repair_instruction = "Tap fast to knock the gunk out of the vent!"
+repair_gesture = "rapid_tap"
+anchor_kind = "vent"
+prop_art_broken = "vent_clogged"
+prop_art_fixed = "vent_clear"
+spawn_sfx = "steam_hiss_loop"
+loop_sfx = ""
+chain_failure_ids = PackedStringArray("pipe_frozen")
+chain_chance = 0.2
+chain_quips = PackedStringArray("Airflow restored. Straight onto a coolant pipe. It's freezing now.")
+pristine_spawn_lines = PackedStringArray("Something is growing in vent 12. It may be sentient.", "Air vent clogged. Breathing is optional, I suppose.")
+pristine_resolved_lines = PackedStringArray("Vent cleared. I refuse to identify that goo.", "Airflow nominal. You may resume breathing.")

@@ -1,7 +1,8 @@
 class_name ArtLib
 extends RefCounted
 
-## Painted art is optional. Every texture is looked up by name in res://assets/art/<name>.png;
+## Painted art is optional. Every texture is looked up by name in res://assets/art/<name>.png
+## (or .webp / .jpg — big room paintings are kept as .jpg/.webp to keep the repo small);
 ## when a file is missing the game falls back to its built-in shape drawing, so new art can be
 ## dropped into that folder later without touching code.
 
@@ -14,15 +15,22 @@ static func path_for(art_name: String) -> String:
 static func has(art_name: String) -> bool:
 	return tex(art_name) != null
 
+const EXTENSIONS: Array[String] = [".png", ".webp", ".jpg"]
+
 static func tex(art_name: String) -> Texture2D:
 	if _cache.has(art_name):
 		return _cache[art_name]
 	var t: Texture2D = null
-	var p: String = path_for(art_name)
-	if ResourceLoader.exists(p):
-		t = load(p) as Texture2D
+	for ext in EXTENSIONS:
+		var p: String = ART_DIR + art_name + ext
+		if ResourceLoader.exists(p):
+			t = load(p) as Texture2D
+			break
 	_cache[art_name] = t
 	return t
+
+static func forget(art_name: String) -> void:
+	_cache.erase(art_name)
 
 static func clear_cache() -> void:
 	_cache.clear()

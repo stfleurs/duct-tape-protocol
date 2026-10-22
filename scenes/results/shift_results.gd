@@ -11,6 +11,7 @@ var _pristine: PristineHologram
 var _bleed_off: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
+	AudioManager.play_music_delayed("menu_theme", 3.0)
 	_bleed_off = DuctTapeUI.fit_design_canvas(self)
 	get_viewport().size_changed.connect(func() -> void:
 		_bleed_off = DuctTapeUI.fit_design_canvas(self)

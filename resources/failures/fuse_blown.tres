@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="FailureData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://resources/failures/failure_data.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+failure_id = "fuse_blown"
+display_name = "Blown Fuse"
+failure_type = "electrical"
+required_tool_id = "duct_tape"
+severity = 1
+time_before_escalation = 12.0
+base_health_drain_per_sec = 1.1
+escalated_health_drain_per_sec = 2.6
+repair_duration_target = 1.5
+required_repair_steps = 2
+base_score_reward = 130
+spawn_anchor_id = "fuse_box"
+badge_type = "lightning"
+repair_header_text = "SWAP THE FUSE!"
+repair_instruction = "Tap the fuse to pull it, tap again to push in a new one!"
+repair_gesture = "fuse"
+anchor_kind = "fuse"
+prop_art_broken = "fuse_box_blown"
+prop_art_fixed = "fuse_box_ok"
+spawn_sfx = "spark_zap_2"
+loop_sfx = ""
+chain_failure_ids = PackedStringArray("sparking_panel")
+chain_chance = 0.2
+chain_quips = PackedStringArray("New fuse, new problems. That relay did NOT like the surge.")
+pristine_spawn_lines = PackedStringArray("A fuse has bravely sacrificed itself. Replace it.", "Fuse B-7 is smoking. That is not a feature.")
+pristine_resolved_lines = PackedStringArray("Fuse replaced. The circuit forgives you.", "Click, click. Even I could do that. If I had hands.")
