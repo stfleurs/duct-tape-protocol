@@ -42,7 +42,7 @@ func _ready() -> void:
 func _setup_bubble_ui() -> void:
 	_bubble_panel = PanelContainer.new()
 	_bubble_panel.position = bubble_offset
-	_bubble_panel.custom_minimum_size = Vector2(250, 74)
+	_bubble_panel.custom_minimum_size = Vector2(270, 74)
 	_bubble_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	var style := StyleBoxFlat.new()
@@ -61,8 +61,8 @@ func _setup_bubble_ui() -> void:
 	_bubble_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_bubble_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_bubble_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_bubble_label.custom_minimum_size = Vector2(222, 54)
-	_bubble_label.add_theme_font_size_override("font_size", 18)
+	_bubble_label.custom_minimum_size = Vector2(242, 54)
+	_bubble_label.add_theme_font_size_override("font_size", 20)
 	_bubble_label.add_theme_color_override("font_color", Color(0.08, 0.06, 0.14))
 	_bubble_panel.add_child(_bubble_label)
 	add_child(_bubble_panel)
