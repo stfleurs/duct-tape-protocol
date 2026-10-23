@@ -57,6 +57,33 @@ var _tex_fg: Texture2D
 var _tex_pillars: Array = []
 var _loaded_art: Array[String] = []
 
+## v0.4 room color identity: a color grade on the painted layers (not new art), light/glow overlays,
+## and an alert level (later levels: darker, red alert beacons, more steam).
+const GRADE_SHADER := """
+shader_type canvas_item;
+uniform vec4 tint : source_color = vec4(1.0);
+uniform float strength = 0.0;
+uniform float bright = 1.0;
+uniform float contrast = 1.0;
+void fragment() {
+	vec4 c = COLOR;
+	float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+	float tl = max(dot(tint.rgb, vec3(0.299, 0.587, 0.114)), 0.05);
+	vec3 colorized = tint.rgb * (l / tl);
+	vec3 g = mix(c.rgb, colorized, strength);
+	g = (g - 0.5) * contrast + 0.5;
+	COLOR = vec4(clamp(g * bright, 0.0, 1.0), c.a);
+}
+"""
+## Props are drawn a bit bigger than v0.3 (easier to see and tap).
+const PROP_SCALE := 1.18
+var look: Dictionary = {}
+var alert_level: int = 0
+var _grade_mat: ShaderMaterial
+var _props: Control
+var _mood: Control
+var _shade: Control
+
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip_contents = true
@@ -65,6 +92,16 @@ func _ready() -> void:
 	_world.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_world.draw.connect(_draw_world)
 	add_child(_world)
+	_props = Control.new()
+	_props.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_props.draw.connect(_draw_props)
+	_world.add_child(_props)
+	var sh := Shader.new()
+	sh.code = GRADE_SHADER
+	_grade_mat = ShaderMaterial.new()
+	_grade_mat.shader = sh
+	_world.material = _grade_mat
+	_far.material = _grade_mat
 	nadine = NadineCharacter.new()
 	nadine.pose = NadineCharacter.Pose.GAMEPLAY_STAND
 	nadine.walk_speed = 620.0
@@ -74,6 +111,12 @@ func _ready() -> void:
 	_fx.draw.connect(_draw_fx)
 	_world.add_child(_fx)
 	_fg = _layer(_draw_fg)
+	_fg.material = _grade_mat
+	_shade = _layer(_draw_shade)
+	_mood = _layer(_draw_mood)
+	var add_mat := CanvasItemMaterial.new()
+	add_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_mood.material = add_mat
 	_edge = _layer(_draw_edge)
 	pristine = PristineHologram.new()
 	pristine.hologram_scale = 0.72
@@ -166,12 +209,12 @@ func layout_room(sz: Vector2) -> void:
 	for a in anchors:
 		var id: String = String(a["id"])
 		anchor_positions[id] = Vector2(float(a["x"]) * room_w, top_inset + float(a["y"]) * room_h)
-		anchor_hit_radius[id] = (130.0 if String(a["kind"]) == "hull" else 110.0) * k
+		anchor_hit_radius[id] = (160.0 if String(a["kind"]) == "hull" else 136.0) * k
 	if nadine != null:
 		nadine.character_scale = 0.96 * k
 		nadine.position.y = floor_y + 34.0 - 142.0 * nadine.character_scale
 	if pristine != null:
-		pristine.position = Vector2(84.0, top_inset + 120.0)
+		pristine.position = Vector2(84.0, top_inset + 210.0)
 	_clamp_camera()
 	_sync_layers()
 
@@ -283,6 +326,10 @@ func _sync_layers() -> void:
 		_world.position = Vector2(-cam_x, 0)
 		_world.size = Vector2(room_w, view_h)
 		_fx.size = _world.size
+		_props.size = _world.size
+		_props.queue_redraw()
+		_mood.queue_redraw()
+		_shade.queue_redraw()
 	if _far != null:
 		_far.queue_redraw()
 		_fg.queue_redraw()
@@ -405,9 +452,131 @@ func _draw_world() -> void:
 	else:
 		_draw_fallback_room(ci, k, ol, gold)
 	_draw_doors(ci, k, ol, gold)
+
+## Props (pipes, valves, relays...) are drawn on their own layer, NOT color graded, so problems keep
+## their real colors and stand out against the tinted room.
+func _draw_props() -> void:
+	var ci: CanvasItem = _props
+	var k: float = element_scale * PROP_SCALE
+	var ol: Color = DuctTapeUI.COLOR_OUTLINE
+	var gold := Color(0.88, 0.68, 0.22)
 	_draw_pipe_runs(ci, k, ol, gold)
 	for a in anchors:
 		_draw_prop(ci, String(a["id"]), String(a["kind"]), k, ol, gold)
+
+## Sets the room's look: color grade + light color + alert level (0..3).
+func set_look(p_look: Dictionary, p_alert: int = 0) -> void:
+	look = p_look
+	alert_level = clampi(p_alert, 0, 3)
+	var tint: Color = look.get("tint", Color.WHITE)
+	if alert_level >= 2:
+		tint = tint.lerp(Color(1.0, 0.18, 0.12), 0.22 * float(alert_level - 1)) # red alert
+	_grade_mat.set_shader_parameter("tint", tint)
+	_grade_mat.set_shader_parameter("strength", float(look.get("grade", 0.0)))
+	_grade_mat.set_shader_parameter("bright", float(look.get("bright", 1.0)) * (1.0 - 0.09 * float(alert_level)))
+	_grade_mat.set_shader_parameter("contrast", 1.06)
+	_sync_layers()
+
+func get_grade_strength() -> float:
+	return float(_grade_mat.get_shader_parameter("strength")) if _grade_mat != null else 0.0
+
+static func _glow(ci: CanvasItem, c: Vector2, radius: Vector2, col: Color) -> void:
+	var pts := PackedVector2Array()
+	var cols := PackedColorArray()
+	pts.append(c)
+	cols.append(col)
+	var edge := Color(col.r, col.g, col.b, 0.0)
+	for i in range(25):
+		var a: float = float(i) / 24.0 * TAU
+		pts.append(c + Vector2(cos(a) * radius.x, sin(a) * radius.y))
+		cols.append(edge)
+	for i in range(24):
+		ci.draw_polygon(PackedVector2Array([pts[0], pts[i + 1], pts[i + 2]]), PackedColorArray([cols[0], cols[i + 1], cols[i + 2]]))
+
+## Additive light: the room's own light color from the ceiling lamps, the reactor's pulsing glow,
+## and red alert beacons on later levels.
+func _draw_mood() -> void:
+	if look.is_empty():
+		return
+	var light: Color = look.get("light", Color(1, 1, 1))
+	var t: float = _anim_time
+	# a soft wash of the room's light from the top
+	var top := Color(light.r, light.g, light.b, 0.10)
+	var none := Color(light.r, light.g, light.b, 0.0)
+	_mood.draw_polygon(PackedVector2Array([Vector2(0, top_inset), Vector2(view_w, top_inset), Vector2(view_w, top_inset + room_h * 0.55), Vector2(0, top_inset + room_h * 0.55)]), PackedColorArray([top, top, none, none]))
+	# ceiling lamps (they move with the room)
+	var gap: float = 430.0 * element_scale
+	var lx: float = fposmod(-cam_x, gap) - gap * 0.5
+	while lx < view_w + gap:
+		var flick: float = 0.85 + 0.15 * sin(t * 3.0 + lx * 0.01)
+		_glow(_mood, Vector2(lx, top_inset + room_h * 0.06), Vector2(170, 120) * element_scale, Color(light.r, light.g, light.b, 0.22 * flick))
+		lx += gap
+	# floor bounce light along the floor line
+	_glow(_mood, Vector2(view_w * 0.5, floor_y + 40.0), Vector2(view_w * 0.8, 90.0 * element_scale), Color(light.r, light.g, light.b, 0.10))
+	if float(look.get("pulse", 0.0)) > 0.0:
+		# reactor core: a big purple glow that breathes
+		var pulse: float = 0.5 + 0.5 * sin(t * 2.4)
+		var core := Vector2(room_w * 0.5 - cam_x, top_inset + room_h * 0.36)
+		_glow(_mood, core, Vector2(520, 560) * element_scale, Color(light.r, light.g, light.b, 0.08 + 0.12 * pulse))
+		_glow(_mood, core, Vector2(220, 240) * element_scale, Color(1.0, 0.8, 1.0, 0.04 + 0.08 * pulse))
+	if alert_level >= 2:
+		# red alert beacons spinning on the ceiling
+		var bx: float = fposmod(-cam_x * 1.0 + 200.0, 420.0 * element_scale) - 210.0 * element_scale
+		while bx < view_w + 300.0:
+			var ph: float = sin(t * (5.0 if alert_level >= 3 else 3.6) + bx * 0.004)
+			var on: float = maxf(0.0, ph)
+			_glow(_mood, Vector2(bx, top_inset + room_h * 0.12), Vector2(190, 150) * element_scale, Color(1.0, 0.12, 0.08, 0.6 * on))
+			bx += 420.0 * element_scale
+
+## Red alert lamp housings on the ceiling (solid, so they read as red on any room color).
+func _draw_alert_lamps() -> void:
+	if alert_level < 2:
+		return
+	var bx: float = fposmod(-cam_x * 1.0 + 200.0, 420.0 * element_scale) - 210.0 * element_scale
+	var k: float = element_scale
+	var ly: float = top_inset + room_h * 0.12
+	while bx < view_w + 300.0:
+		var ph: float = sin(_anim_time * (5.0 if alert_level >= 3 else 3.6) + bx * 0.004)
+		var on: float = maxf(0.0, ph)
+		_shade.draw_line(Vector2(bx, ly - room_h * 0.12), Vector2(bx, ly - 16 * k), Color(0.12, 0.09, 0.18), 6 * k)
+		_shade.draw_rect(Rect2(bx - 24 * k, ly - 20 * k, 48 * k, 12 * k), Color(0.18, 0.14, 0.24), true)
+		_shade.draw_circle(Vector2(bx, ly), 20 * k, Color(0.08, 0.05, 0.14))
+		_shade.draw_circle(Vector2(bx, ly), 16 * k, Color(0.55, 0.04, 0.04).lerp(Color(1.0, 0.25, 0.15), on))
+		bx += 420.0 * k
+
+## Shade: darker edges for later levels, and steam drifting up (more steam the higher the alert).
+func _draw_shade() -> void:
+	if look.is_empty():
+		return
+	var dark: float = 0.22 + 0.12 * float(alert_level)
+	var d0 := Color(0.03, 0.01, 0.08, dark)
+	var d1 := Color(0.03, 0.01, 0.08, 0.0)
+	var bh: float = room_h * 0.16
+	_shade.draw_polygon(PackedVector2Array([Vector2(0, top_inset), Vector2(view_w, top_inset), Vector2(view_w, top_inset + bh), Vector2(0, top_inset + bh)]), PackedColorArray([d0, d0, d1, d1]))
+	_shade.draw_polygon(PackedVector2Array([Vector2(0, view_h - bh), Vector2(view_w, view_h - bh), Vector2(view_w, view_h), Vector2(0, view_h)]), PackedColorArray([d1, d1, d0, d0]))
+	var sw: float = view_w * 0.16
+	_shade.draw_polygon(PackedVector2Array([Vector2(0, top_inset), Vector2(sw, top_inset), Vector2(sw, view_h), Vector2(0, view_h)]), PackedColorArray([d0, d1, d1, d0]))
+	_shade.draw_polygon(PackedVector2Array([Vector2(view_w - sw, top_inset), Vector2(view_w, top_inset), Vector2(view_w, view_h), Vector2(view_w - sw, view_h)]), PackedColorArray([d1, d0, d0, d1]))
+	if alert_level > 0:
+		_shade.draw_rect(Rect2(0, top_inset, view_w, room_h), Color(0.05, 0.0, 0.08, 0.08 * float(alert_level)), true)
+		_draw_alert_lamps()
+	# steam vents along the floor
+	var vents: int = 2 + 2 * alert_level
+	var steam_tex: Texture2D = ArtLib.tex("steam_puff")
+	for i in range(vents):
+		var wx: float = room_w * (0.1 + 0.8 * _rng_f(31, i))
+		var sx: float = wx - cam_x
+		if sx < -200.0 or sx > view_w + 200.0:
+			continue
+		for j in range(3):
+			var ph: float = fposmod(_anim_time * 0.35 + float(j) / 3.0 + _rng_f(9, i), 1.0)
+			var pos := Vector2(sx + sin(ph * 6.0 + float(i)) * 20.0, wall_y + room_h * 0.02 - ph * room_h * 0.30)
+			var rad: float = (40.0 + 90.0 * ph) * element_scale
+			var col := Color(0.92, 0.90, 1.0, 0.22 * (1.0 - ph))
+			if steam_tex != null:
+				_shade.draw_texture_rect(steam_tex, Rect2(pos - Vector2(rad, rad), Vector2(rad, rad) * 2.0), false, col)
+			else:
+				_shade.draw_circle(pos, rad, col)
 
 func _draw_fallback_room(ci: CanvasItem, k: float, ol: Color, gold: Color) -> void:
 	var wall: Color = _theme("wall", Color(0.44, 0.37, 0.58))

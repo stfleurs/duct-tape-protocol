@@ -20,6 +20,39 @@ func _init() -> void:
 func set_anchor_pool(pool: Dictionary) -> void:
 	anchor_pool = pool.duplicate(true)
 
+## v0.4: where each spot is (id -> {"x", "y", "row"} in 0..1 room coords). With it, new problems
+## spread out: away from what is already broken, alternating wall / floor.
+var anchor_meta: Dictionary = {}
+var _last_row: String = ""
+
+func set_anchor_meta(meta: Dictionary) -> void:
+	anchor_meta = meta.duplicate(true)
+	_last_row = ""
+
+func _pick_spread_anchor(free: Array[String]) -> String:
+	var best: String = free[0]
+	var best_score: float = -INF
+	var active_pts: Array[Vector2] = []
+	for inst in _active_failures.values():
+		var m: Dictionary = anchor_meta.get(String(inst.get("anchor_id", "")), {})
+		if not m.is_empty():
+			active_pts.append(Vector2(float(m["x"]), float(m["y"]) * 0.4))
+	for a in free:
+		var m2: Dictionary = anchor_meta.get(a, {})
+		var score: float = rng.randf() * 0.12
+		if not m2.is_empty():
+			var p := Vector2(float(m2["x"]), float(m2["y"]) * 0.4)
+			var dmin: float = 0.6
+			for q in active_pts:
+				dmin = minf(dmin, p.distance_to(q))
+			score += dmin
+			if _last_row != "" and String(m2.get("row", "")) != _last_row:
+				score += 0.08
+		if score > best_score:
+			best_score = score
+			best = a
+	return best
+
 func has_failure(failure_id: String) -> bool:
 	return _failure_catalog.has(failure_id)
 
@@ -90,9 +123,14 @@ func spawn_failure(failure_id: String, anchor_id: String = "", extra: Dictionary
 		return {}
 	var f_data: FailureData = _failure_catalog[failure_id]
 	var free: Array[String] = free_anchors_for(failure_id)
-	var chosen_anchor: String = free[rng.randi() % free.size()]
+	var chosen_anchor: String = ""
 	if anchor_id != "" and free.has(anchor_id):
 		chosen_anchor = anchor_id
+	elif not anchor_meta.is_empty():
+		chosen_anchor = _pick_spread_anchor(free)
+	else:
+		chosen_anchor = free[rng.randi() % free.size()]
+	_last_row = String(anchor_meta.get(chosen_anchor, {}).get("row", ""))
 	var instance_id: int = _next_instance_id
 	_next_instance_id += 1
 

@@ -6,6 +6,24 @@ Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "
 
 ---
 
+## v0.4 — Reasons to come back, and rooms you can tell apart
+
+**Rewards**
+- **Badges** (`scripts/achievements.gd`, `scripts/reward_manager.gd` autoload, screen `scenes/achievements/`): 19 badges, each pays scrap once — First Shift, Tape Rookie (10 fixes), Tape Master (50), Duct Legend (200), Combo x5, On Fire (x10), Clean Dash, Gold Standard (3 stars), Perfect Shift (90%+ ship), Speed Run (under 60 s), Close Call, Chain Survivor (3 chain reactions), Breach Buster (10 hull breaches), Fixed It All (every malfunction type), Scrap Collector, Daily Duty, 3-Day and 7-Day Streak, Regular Crew (10 shifts). Drawn in code (`scenes/ui/badge_art.gd`, purple/gold; locked = grey silhouette with progress). A toast with confetti, a chime and a PRISTINE quip pops when one unlocks mid-shift (`scenes/ui/badge_toast.gd`). BADGES button on the main menu and the results screen.
+- **Stars per shift** (`ScoreManager.star_goals`): ★ finish the shift, ★ beat the par time, ★ keep the ship at 70%+ (a x5 combo earns a missed star). The results screen lists the three goals with your numbers, "NEW BEST!" and the badges earned this shift. Best stars per ship-map level are saved and shown on the ship map.
+- **Daily Shift**: same rooms, order and spots for everyone that day (date-based seed, local only), +50 bonus scrap on the first finish of the day. **Login streak** on the main menu: +10..45 scrap for the first open of each day; a missed day resets it.
+- **Combo**: quick fixes in a row (within 6 s) build a combo — counter on screen, points x1.25 per step (up to x3), the fix chime rises in pitch.
+
+**Clarity**
+- **Each room has its own color** (`look` in `scripts/ship_rooms.gd`): a color grade on the painted room (shader in `ship_room_view.gd`, props keep their real colors), the room's light from the ceiling lamps, a pulsing glow in the Reactor. Engine Room warm orange, Cargo Bay teal, Reactor Core deep purple, Bridge cool blue. Later ship-map levels (and the last room of a shift) get darker with red alert lamps, red flashes and more steam.
+- **Room title card**: a color band "ROOM 2/4 / REACTOR CORE" for about a second on entry; the HUD's room name and progress bar take the room's color.
+- **No tool bar** (tools are picked automatically). **Problems spread out** over the wall and the floor band in front of Nadine, a bit bigger and easier to tap. **No idle gaps**: when nothing is broken the next problem comes within about a second. **PRISTINE** has 40+ extra lines (`scripts/quips.gd`) and never says the same line twice in a row. The repair meter never covers Nadine's head.
+- **Short first shift**: 3 rooms with 2 / 2 / 3 problems and one short dash (about a minute).
+
+Saves from v0.3 load fine (new fields get defaults). 167 tests (`tests/test_runner.tscn`). Screenshots: `tests/screenshot_runner.tscn`.
+
+---
+
 ## v0.3 — Moving around the ship
 
 **A shift is now 3–4 rooms in a row**, not one screen (`scripts/ship_rooms.gd` builds the plan; order varies every shift, later rooms have more to fix and get harder):
@@ -39,7 +57,7 @@ Tapping the malfunction repeatedly still works as an accessible fallback for eve
 
 **Art**: painted rooms and props are optional and looked up by name in `assets/art/` (`<room>_far`, `<room>_near`, prop names in each `.tres`: `prop_art_broken` / `prop_art_fixed`). Missing files fall back to drawn versions.
 
-Screenshots for v0.3 are rendered by `tests/screenshot_runner.tscn` (needs a window: `godot --path . --resolution 1080x2400 res://tests/screenshot_runner.tscn -- <out_dir>`).
+Screenshots are rendered by `tests/screenshot_runner.tscn` (needs a window: `godot --path . --resolution 1080x2400 res://tests/screenshot_runner.tscn -- <out_dir>`).
 
 ---
 
@@ -78,7 +96,7 @@ It finds Godot 4.3 (this folder, `%USERPROFILE%\.godot4\`, Desktop, Downloads, `
 & "C:\path\to\Godot_v4.3-stable_win64.exe" --path .
 ```
 
-### 2. Run Automated Tests (112 assertions)
+### 2. Run Automated Tests (167 assertions)
 ```powershell
 & "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . res://tests/test_runner.tscn
 ```

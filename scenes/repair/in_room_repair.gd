@@ -38,6 +38,8 @@ var _last_spin_angle: float = 0.0
 const TAP_MAX_SEC := 0.28
 const TAP_MAX_MOVE := 22.0
 
+var _last_meter_rect: Rect2 = Rect2()
+
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
@@ -349,11 +351,12 @@ func _draw_seal_meter(rc: RepairController, a: Vector2, k: float) -> void:
 	var w: float = 200.0 * k
 	var h: float = 26.0 * k
 	var kind: String = room_view.get_anchor_kind(active_anchor_id) if room_view != null else ""
-	var y: float = a.y + (100.0 if kind in ["relay", "fuse", "hull", "hatch"] else 64.0) * k
-	if kind == "hatch":
-		y = a.y + 140.0 * k
-	var x: float = clampf(a.x - w * 0.5, 12.0, size.x - w - 12.0)
+	var mr: Rect2 = compute_seal_meter_rect(kind, a, k)
+	var x: float = mr.position.x
+	var y: float = mr.position.y
+	var block_h: float = mr.size.y
 	var r := Rect2(x, y, w, h)
+	_last_meter_rect = Rect2(x, y, w, block_h)
 	var bg := StyleBoxFlat.new()
 	bg.bg_color = Color(0.10, 0.06, 0.20, 0.92)
 	bg.border_color = DuctTapeUI.COLOR_GOLD
@@ -372,6 +375,42 @@ func _draw_seal_meter(rc: RepairController, a: Vector2, k: float) -> void:
 	var label: String = rc.get_current_phase_prompt()
 	draw_string_outline(ThemeDB.fallback_font, Vector2(x - 120, y + h + 30), label, HORIZONTAL_ALIGNMENT_CENTER, w + 240, 24, 7, DuctTapeUI.COLOR_OUTLINE)
 	draw_string(ThemeDB.fallback_font, Vector2(x - 120, y + h + 30), label, HORIZONTAL_ALIGNMENT_CENTER, w + 240, 24, Color.WHITE)
+
+## Where the seal meter (bar + its prompt line) goes for a spot: below the prop, unless that covers
+## Nadine — then above the prop, then beside it, then above her head. Returns the whole block.
+func compute_seal_meter_rect(kind: String, a: Vector2, k: float) -> Rect2:
+	var w: float = 200.0 * k
+	var h: float = 26.0 * k
+	var block_h: float = h + 40.0
+	var y: float = a.y + (100.0 if kind in ["relay", "fuse", "hull", "hatch"] else 64.0) * k * 1.18
+	if kind == "hatch":
+		y = a.y + 150.0 * k
+	var x: float = clampf(a.x - w * 0.5, 12.0, size.x - w - 12.0)
+	var body: Rect2 = _nadine_screen_rect()
+	if body.size.x <= 0.0 or not Rect2(x - 30.0, y, w + 60.0, block_h).intersects(body):
+		return Rect2(x, y, w, block_h)
+	var top_off: float = float({"relay": 110.0, "fuse": 105.0, "hull": 120.0, "hatch": 160.0, "valve": 140.0, "vent": 80.0, "cable": 70.0}.get(kind, 62.0)) * k * 1.18
+	var y_above: float = a.y - top_off - block_h
+	if y_above > 120.0 and not Rect2(x - 30.0, y_above, w + 60.0, block_h).intersects(body):
+		return Rect2(x, y_above, w, block_h)
+	var x_side: float = clampf(a.x + 80.0 * k, 12.0, size.x - w - 12.0)
+	var y_side: float = maxf(120.0, a.y - block_h * 0.5)
+	if not Rect2(x_side - 30.0, y_side, w + 60.0, block_h).intersects(body):
+		return Rect2(x_side, y_side, w, block_h)
+	return Rect2(x, maxf(120.0, body.position.y - block_h - 8.0), w, block_h)
+
+## Nadine's body on screen (for keeping meters off her head).
+func _nadine_screen_rect() -> Rect2:
+	if room_view == null or room_view.nadine == null:
+		return Rect2()
+	var n: NadineCharacter = room_view.nadine
+	var br: Rect2 = n.get_body_rect()
+	br.position += room_view.world_to_screen(n.position)
+	return br
+
+## Where the seal meter ends up for the active repair (tests).
+func get_seal_meter_rect() -> Rect2:
+	return _last_meter_rect
 
 func _draw_gesture_hint(rc: RepairController, a: Vector2, k: float) -> void:
 	if _pointer_down:

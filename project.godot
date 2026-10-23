@@ -12,7 +12,7 @@ config_version=5
 
 config/name="Duct Tape Protocol"
 config/description="Keep the Flawless Ascendancy alive with duct tape, quick thinking, and a wrench!"
-config/version="0.3.0"
+config/version="0.4.0"
 run/main_scene="res://scenes/main_menu/main_menu.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.svg"
@@ -25,6 +25,7 @@ ScoreManager="*res://scripts/score_manager.gd"
 AudioManager="*res://scripts/audio_manager.gd"
 AdManager="*res://scripts/ad_manager.gd"
 GameManager="*res://scripts/game_manager.gd"
+RewardManager="*res://scripts/reward_manager.gd"
 
 [display]
 

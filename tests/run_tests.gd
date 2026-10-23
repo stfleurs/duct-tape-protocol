@@ -21,6 +21,11 @@ func _ready() -> void:
 	_test_chain_reaction()
 	_test_runner()
 	_test_audio()
+	_test_v04_achievements()
+	_test_v04_stars()
+	_test_v04_daily_and_streak()
+	_test_v04_combo()
+	_test_v04_clarity()
 
 	print("===============================================")
 	print("Tests Passed: %d | Tests Failed: %d" % [_passed, _failed])
@@ -716,3 +721,285 @@ func _test_audio() -> void:
 	for fd in ShipRooms.load_all_failures():
 		every_fd_sfx = every_fd_sfx and AudioManager.has_file(fd.spawn_sfx)
 	_assert(every_fd_sfx, "Every malfunction has a sound when it breaks")
+
+func _test_v04_achievements() -> void:
+	print("\n--- 17. v0.4 Badges unlock, persist, pay scrap once ---")
+	var test_path: String = "user://test_v04_save.json"
+	SaveManager.save_path = test_path
+	SaveManager.reset_to_defaults()
+	_assert(Achievements.count() >= 15 and Achievements.count() <= 20, "There are 15-20 badges (%d)" % Achievements.count())
+	var ids: Dictionary = {}
+	var all_paid: bool = true
+	for d in Achievements.DEFS:
+		ids[String(d["id"])] = true
+		all_paid = all_paid and int(d.get("scrap", 0)) > 0
+	_assert(ids.size() == Achievements.count() and all_paid, "Badge ids are unique and every badge pays scrap")
+	var got: Array[String] = []
+	var cb := func(d: Dictionary) -> void: got.append(String(d["id"]))
+	RewardManager.achievement_unlocked.connect(cb)
+	var scrap0: int = CurrencyManager.get_scrap()
+	RewardManager.begin_shift()
+	RewardManager.record_fix("pipe_leak")
+	_assert(got.is_empty(), "One fix unlocks nothing yet")
+	for i in range(9):
+		RewardManager.record_fix("hull_breach")
+	_assert(got.has("tape_rookie") and SaveManager.is_achievement_unlocked("tape_rookie"), "10 fixes unlock 'Tape Rookie' mid-play (signal for the toast)")
+	_assert(CurrencyManager.get_scrap() == scrap0 + int(Achievements.get_def("tape_rookie")["scrap"]), "The badge pays its scrap")
+	var scrap1: int = CurrencyManager.get_scrap()
+	RewardManager.record_fix("hull_breach") # 11th fix, 10th breach
+	RewardManager.check_unlocks()
+	RewardManager.check_unlocks()
+	_assert(got.count("tape_rookie") == 1 and got.count("breach_buster") == 1 and CurrencyManager.get_scrap() == scrap1 + int(Achievements.get_def("breach_buster")["scrap"]), "A badge unlocks and pays only once")
+	_assert(got.has("breach_buster"), "10 hull breaches unlock 'Breach Buster'")
+	RewardManager.record_combo(5)
+	_assert(got.has("combo_5"), "A x5 combo unlocks 'Combo x5'")
+	var res: Dictionary = {"survived": true, "stars": 3, "health_percent": 95.0, "time_sec": 50.0}
+	var end_new: Array[String] = RewardManager.record_shift_end(res)
+	_assert(end_new.has("first_shift") and end_new.has("gold_standard") and end_new.has("perfect_shift") and end_new.has("speed_run"), "Finishing a shift checks First Shift / 3 stars / Perfect / Speed Run")
+	_assert(RewardManager.unlocked_this_shift.has("tape_rookie") and RewardManager.unlocked_this_shift.has("first_shift"), "The results screen gets every badge from this shift")
+	SaveManager.save_game()
+	SaveManager.load_game(test_path)
+	_assert(SaveManager.is_achievement_unlocked("combo_5") and SaveManager.get_stat("fixes_total") == 11 and SaveManager.get_stat("breaches_fixed") == 10, "Badges and stats survive a reload")
+	var by: Dictionary = SaveManager.get_stats()["fixes_by_type"]
+	for t in Achievements.ALL_TYPES:
+		by[t] = maxi(1, int(by.get(t, 0)))
+	RewardManager.check_unlocks()
+	_assert(got.has("fixed_it_all"), "Fixing every kind of problem unlocks 'Fixed It All'")
+	RewardManager.achievement_unlocked.disconnect(cb)
+	# a v0.3 save (no v0.4 fields) still loads, with the new fields at their defaults
+	var f := FileAccess.open(test_path, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"version": 1, "scrap_balance": 345, "unlocked_rooms": ["engine_room", "life_support"], "room_stars": {"engine_room": 2}, "room_best_scores": {"engine_room": 900}, "tutorial_completed": true, "settings": {"sound_enabled": true, "music_enabled": false, "vibration_enabled": true}}))
+	f.close()
+	var ok: bool = SaveManager.load_game(test_path)
+	_assert(ok and CurrencyManager.get_scrap() == 345 and SaveManager.get_room_stars("engine_room") == 2 and not bool(SaveManager.get_setting("music_enabled", true)), "A v0.3 save loads (scrap, stars, settings kept)")
+	_assert(SaveManager.get_stat("fixes_total") == 0 and SaveManager.get_streak()["count"] == 0 and not SaveManager.is_achievement_unlocked("first_shift"), "...and starts with empty badges / stats / streak")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path))
+	SaveManager.save_path = SaveManager.DEFAULT_SAVE_PATH
+	SaveManager.reset_to_defaults()
+
+func _test_v04_stars() -> void:
+	print("\n--- 18. v0.4 Stars per shift (time, damage, combo) ---")
+	var g0: Dictionary = ScoreManager.star_goals(false, 90.0, 30.0, 60.0, 9)
+	_assert(int(g0["stars"]) == 0, "A failed shift gets 0 stars")
+	_assert(int(ScoreManager.star_goals(true, 40.0, 90.0, 60.0, 2)["stars"]) == 1, "Finish slow and banged up: 1 star")
+	_assert(int(ScoreManager.star_goals(true, 40.0, 55.0, 60.0, 2)["stars"]) == 2, "Beat the par time: +1 star")
+	_assert(int(ScoreManager.star_goals(true, 80.0, 90.0, 60.0, 2)["stars"]) == 2, "Ship at 70%+: +1 star")
+	_assert(int(ScoreManager.star_goals(true, 80.0, 55.0, 60.0, 2)["stars"]) == 3, "Fast and careful: 3 stars")
+	_assert(int(ScoreManager.star_goals(true, 40.0, 55.0, 60.0, 5)["stars"]) == 3, "A x5 combo earns a missed star")
+	_assert(int(ScoreManager.star_goals(true, 90.0, 10.0, 60.0, 12)["stars"]) == 3, "Never more than 3 stars")
+	var r: Dictionary = ScoreManager.calculate_shift_results(true, 80.0, 100.0, 800, 7, GameManager.load_level_data("engine_room"), 50.0, 60.0, 3)
+	_assert(int(r["stars"]) == 3 and bool(r["star_goals"]["fast"]) and int(r["scrap_earned"]) > 0, "Room shifts use the star goals (and stars pay scrap)")
+	var test_path: String = "user://test_v04_stars.json"
+	SaveManager.save_path = test_path
+	SaveManager.reset_to_defaults()
+	SaveManager.record_shift_completion("engine_room", 1200, 2)
+	SaveManager.record_shift_completion("engine_room", 900, 1)
+	_assert(SaveManager.get_room_stars("engine_room") == 2 and SaveManager.get_room_best_score("engine_room") == 1200, "Best stars / score per ship-map level are kept")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path))
+	SaveManager.save_path = SaveManager.DEFAULT_SAVE_PATH
+	SaveManager.reset_to_defaults()
+
+func _test_v04_daily_and_streak() -> void:
+	print("\n--- 19. v0.4 Daily Shift seed + login streak ---")
+	var s1: int = Achievements.daily_seed("2026-10-23")
+	_assert(s1 == Achievements.daily_seed("2026-10-23") and s1 != Achievements.daily_seed("2026-10-24"), "Daily seed: same all day, different tomorrow")
+	var p1: Array[Dictionary] = ShipRooms.build_plan(Achievements.daily_start_room("2026-10-23"), 2, s1)
+	var p2: Array[Dictionary] = ShipRooms.build_plan(Achievements.daily_start_room("2026-10-23"), 2, s1)
+	_assert(JSON.stringify(p1) == JSON.stringify(p2), "Same daily seed builds the same shift (rooms, order, dashes)")
+	var spawns: Array = []
+	for run in range(2):
+		var fm := FailureManager.new()
+		fm.configure(ShipRooms.load_all_failures(), 6)
+		fm.set_anchor_pool(ShipRooms.get_anchor_pool("reactor"))
+		fm.set_anchor_meta(ShipRooms.anchor_meta("reactor"))
+		fm.rng.seed = s1 + 1
+		var seq: String = ""
+		for fid in ["pipe_leak", "sparking_panel", "overheating_engine", "pipe_frozen", "cable_loose"]:
+			seq += String(fm.spawn_failure(fid).get("anchor_id", "?")) + ","
+		spawns.append(seq)
+	_assert(spawns[0] == spawns[1], "Same daily seed puts problems on the same spots")
+	_assert(Achievements.next_streak("2026-10-22", "2026-10-23", 2) == 3, "Streak: next day +1")
+	_assert(Achievements.next_streak("2026-10-23", "2026-10-23", 3) == 3, "Streak: same day unchanged")
+	_assert(Achievements.next_streak("2026-10-20", "2026-10-23", 5) == 1, "Streak: a missed day resets to 1")
+	_assert(Achievements.next_streak("", "2026-10-23", 0) == 1 and Achievements.next_streak("2026-10-31", "2026-11-01", 4) == 5, "Streak: first day = 1, works across months")
+	var test_path: String = "user://test_v04_streak.json"
+	SaveManager.save_path = test_path
+	SaveManager.reset_to_defaults()
+	var scrap0: int = CurrencyManager.get_scrap()
+	var c1: Dictionary = RewardManager.claim_daily_login("2026-10-21")
+	var c1b: Dictionary = RewardManager.claim_daily_login("2026-10-21")
+	_assert(bool(c1["new_day"]) and int(c1["streak"]) == 1 and not bool(c1b["new_day"]) and CurrencyManager.get_scrap() == scrap0 + Achievements.login_bonus(1), "Login bonus once per day")
+	RewardManager.claim_daily_login("2026-10-22")
+	var c3: Dictionary = RewardManager.claim_daily_login("2026-10-23")
+	_assert(int(c3["streak"]) == 3 and SaveManager.is_achievement_unlocked("streak_3"), "3 days in a row: streak 3 + '3-Day Streak' badge")
+	var c4: Dictionary = RewardManager.claim_daily_login("2026-10-26")
+	_assert(int(c4["streak"]) == 1 and int(SaveManager.get_streak()["best"]) == 3, "Missing days resets the streak (best kept)")
+	var b1: int = RewardManager.record_daily_finish(800, true, "2026-10-26")
+	var b2: int = RewardManager.record_daily_finish(900, true, "2026-10-26")
+	_assert(b1 == Achievements.DAILY_BONUS_SCRAP and b2 == 0 and RewardManager.is_daily_done("2026-10-26") and int(SaveManager.get_daily()["best_score"]) == 900, "Daily bonus paid once per day, best daily score kept")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(test_path))
+	SaveManager.save_path = SaveManager.DEFAULT_SAVE_PATH
+	SaveManager.reset_to_defaults()
+
+func _test_v04_combo() -> void:
+	print("\n--- 20. v0.4 Combo ---")
+	var lm := LevelManager.new()
+	add_child(lm)
+	lm.setup_shift(GameManager.load_level_data("engine_room"), [load("res://resources/tools/duct_tape.tres") as ToolData, load("res://resources/tools/wrench.tres") as ToolData], ShipRooms.load_all_failures())
+	lm.chain_enabled = false
+	var room: Dictionary = ShipRooms.get_room("engine_room")
+	lm.begin_room("engine_room", PackedStringArray(room["pool"]), ShipRooms.get_anchor_pool("engine_room"), 20, 0.5, 4)
+	var seen: Array[int] = []
+	lm.combo_changed.connect(func(c: int, _m: float) -> void: seen.append(c))
+	var pts: Array[int] = []
+	var chimed: bool = true
+	for i in range(4):
+		var inst: Dictionary = lm.failure_manager.spawn_failure("vent_clogged")
+		var res: Dictionary = lm.complete_failure_repair(int(inst["instance_id"]), 1.0)
+		pts.append(int(res["points"]))
+		chimed = chimed and AudioManager.last_event == "repair_success"
+		lm.step_shift(1.0)
+	_assert(lm.combo_count == 4 and seen.size() >= 4 and seen[0] == 1 and seen[1] == 2 and seen[2] == 3 and seen[3] == 4, "Quick fixes in a row build a combo (x1..x4)")
+	_assert(pts[3] > pts[0] and is_equal_approx(ScoreManager.combo_multiplier(4), 1.75), "The combo multiplies the points")
+	_assert(chimed, "Each fix chimes (pitch rises with the combo)")
+	lm.room_quota = 0
+	for i in range(30):
+		lm.step_shift(0.25)
+	_assert(lm.combo_count == 0 and seen[seen.size() - 1] == 0 and lm.best_combo == 4, "The combo ends after a few seconds without a fix (best kept)")
+	lm.free()
+
+func _test_v04_clarity() -> void:
+	print("\n--- 21. v0.4 Rooms look different, problems spread out, no idle gaps, short first shift ---")
+	var tints: Dictionary = {}
+	for rid in ShipRooms.ROOMS.keys():
+		var lk: Dictionary = ShipRooms.get_look(rid)
+		_assert(not lk.is_empty() and float(lk.get("grade", 0.0)) > 0.2, "%s has its own color identity" % rid)
+		tints[str(lk.get("tint"))] = true
+	_assert(tints.size() == ShipRooms.ROOMS.size(), "Every room has a different color")
+	_assert(ShipRooms.alert_level(1, 0, 3) == 0 and ShipRooms.alert_level(5, 3, 4) == 3 and ShipRooms.alert_level(3, 0, 4) < ShipRooms.alert_level(3, 3, 4), "Later levels / last rooms get red-alert looks")
+	var low: int = 0
+	var high: int = 0
+	for rid in ShipRooms.ROOMS.keys():
+		for a in ShipRooms.get_anchors(rid):
+			if String(a["row"]) == "low":
+				low += 1
+				if float(a["y"]) <= float(ShipRooms.get_room(rid)["floor"]) or float(a["y"]) >= 0.9:
+					_assert(false, "Low spot %s/%s sits on the floor band" % [rid, a["id"]])
+			else:
+				high += 1
+	_assert(low >= 12 and high >= 20, "Spots are on the wall AND on the floor band (%d low, %d high)" % [low, high])
+	# spread: new problems land away from what's already broken, on both rows (20 shifts, vs random spots)
+	var both_rows: int = 0
+	var spread_sum: float = 0.0
+	var random_sum: float = 0.0
+	for sd in range(20):
+		for mode in ["spread", "random"]:
+			var fm := FailureManager.new()
+			fm.configure(ShipRooms.load_all_failures(), 6)
+			fm.set_anchor_pool(ShipRooms.get_anchor_pool("reactor"))
+			var meta: Dictionary = ShipRooms.anchor_meta("reactor")
+			if mode == "spread":
+				fm.set_anchor_meta(meta)
+			fm.rng.seed = 1000 + sd
+			var rows: Dictionary = {}
+			var pts: Array[Vector2] = []
+			for fid in ["hull_breach", "pipe_hairline", "pipe_frozen", "pipe_joint_leak"]:
+				var inst: Dictionary = fm.spawn_failure(fid)
+				var m: Dictionary = meta[String(inst["anchor_id"])]
+				rows[String(m["row"])] = true
+				pts.append(Vector2(float(m["x"]), float(m["y"]) * 0.4))
+			var dsum: float = 0.0
+			for i in range(pts.size()):
+				var dm: float = 9.0
+				for j in range(pts.size()):
+					if i != j:
+						dm = minf(dm, pts[i].distance_to(pts[j]))
+				dsum += dm
+			if mode == "spread":
+				spread_sum += dsum
+				if rows.size() == 2:
+					both_rows += 1
+			else:
+				random_sum += dsum
+	_assert(both_rows >= 18 and spread_sum > random_sum * 1.03, "Problems spread out: wall and floor (%d/20 shifts), %.0f%% further apart than random spots" % [both_rows, (spread_sum / maxf(0.001, random_sum) - 1.0) * 100.0])
+	# no idle gap: with every problem fixed at once, the next one comes within ~1 s
+	var lm := LevelManager.new()
+	add_child(lm)
+	lm.setup_shift(GameManager.load_level_data("engine_room"), [load("res://resources/tools/duct_tape.tres") as ToolData, load("res://resources/tools/wrench.tres") as ToolData], ShipRooms.load_all_failures())
+	lm.chain_enabled = false
+	var room: Dictionary = ShipRooms.get_room("cargo_bay")
+	lm.begin_room("cargo_bay", PackedStringArray(room["pool"]), ShipRooms.get_anchor_pool("cargo_bay"), 8, 0.0, 2)
+	var guard: int = 0
+	while not lm.room_is_clear and guard < 4000:
+		guard += 1
+		lm.step_shift(0.05)
+		for inst in lm.failure_manager.get_active_failures():
+			lm.complete_failure_repair(int(inst["instance_id"]), 1.0)
+	_assert(lm.room_is_clear and lm.longest_idle <= 1.5, "No idle gap: the next problem comes fast (longest wait %.1f s)" % lm.longest_idle)
+	lm.free()
+	# first shift is short (kids get bored fast)
+	var p1: Array[Dictionary] = ShipRooms.build_plan("engine_room", 1, 3)
+	var fixes: int = 0
+	for s in p1:
+		fixes += int(s.get("quota", 0))
+	_assert(fixes <= 8 and ShipRooms.par_time(p1) <= 75.0, "First shift: %d fixes, par %d s (about a minute)" % [fixes, int(ShipRooms.par_time(p1))])
+	# PRISTINE: lots of lines, never the same line twice in a row
+	_assert(Quips.total_lines() >= 30, "PRISTINE has %d+ general lines" % Quips.total_lines())
+	var prev: String = ""
+	var repeat: bool = false
+	var distinct: Dictionary = {}
+	for i in range(200):
+		var l: String = Quips.pick(Quips.FIX, ["Ugh. It's holding."])
+		repeat = repeat or l == prev
+		prev = l
+		distinct[l] = true
+	_assert(not repeat and distinct.size() >= 10, "PRISTINE never repeats a line twice in a row (%d different in 200)" % distinct.size())
+	# gameplay screen: no tool bar, title card, the repair meter stays off Nadine's head
+	var gs: Node = (load(GameManager.SCENE_GAMEPLAY) as PackedScene).instantiate()
+	add_child(gs)
+	_assert(not gs._toolbelt.visible and gs._tool_buttons.is_empty(), "No bottom tool bar (tools are picked automatically)")
+	_assert(gs._title_band.modulate.a > 0.5 and String(gs._title_text[0]).begins_with("ROOM 1/"), "Entering a room shows the big title card")
+	_assert(gs.room_view.get_grade_strength() > 0.2, "The room is color graded")
+	var rv: ShipRoomView = gs.room_view
+	var glm: LevelManager = gs.level_manager
+	var bad: int = 0
+	var checked: int = 0
+	for rid in ["engine_room", "cargo_bay", "reactor", "bridge"]:
+		rv.load_room(rid)
+		glm.begin_room(rid, PackedStringArray(ShipRooms.get_room(rid)["pool"]), ShipRooms.get_anchor_pool(rid), 99, 1.0, 1)
+		gs.in_room.reset_all()
+		for a in ShipRooms.get_anchors(rid):
+			var fid: String = ""
+			for f in ShipRooms.load_all_failures():
+				if f.get_anchor_kind() == String(a["kind"]) and f.repair_style != "closeup":
+					fid = f.failure_id
+					break
+			if fid == "":
+				continue
+			glm.failure_manager.clear_all()
+			var inst: Dictionary = glm.failure_manager.spawn_failure(fid, String(a["id"]))
+			if inst.is_empty():
+				continue
+			rv.sync_failures(glm.failure_manager.get_active_failures())
+			rv.nadine.position.x = rv.get_work_x(String(a["id"]))
+			rv.nadine.move_to_x(rv.nadine.position.x)
+			rv.snap_camera()
+			gs.in_room.begin_repair(inst)
+			var mr: Rect2 = gs.in_room.compute_seal_meter_rect(String(a["kind"]), rv.get_anchor_position(String(a["id"])), rv.element_scale)
+			var head: Rect2 = gs.in_room._nadine_screen_rect()
+			head.size.y = head.size.y * 0.4 # her head + shoulders
+			checked += 1
+			if mr.intersects(head):
+				bad += 1
+			gs.in_room.release_active()
+	_assert(checked > 20 and bad == 0, "The repair meter never covers Nadine's head (%d spots checked)" % checked)
+	gs.free()
+	# Daily Shift: the gameplay screen builds today's seeded shift
+	GameManager.daily_mode = true
+	var dg: Node = (load(GameManager.SCENE_GAMEPLAY) as PackedScene).instantiate()
+	add_child(dg)
+	var today: String = Achievements.today()
+	var expect: Array[Dictionary] = ShipRooms.build_plan(Achievements.daily_start_room(today), 2, Achievements.daily_seed(today))
+	_assert(dg.level_manager.is_daily and JSON.stringify(dg.plan) == JSON.stringify(expect) and String(dg.room_view.room_id) == Achievements.daily_start_room(today), "Daily Shift plays today's seeded shift")
+	dg.free()
+	GameManager.daily_mode = false

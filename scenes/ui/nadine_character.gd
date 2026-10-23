@@ -135,6 +135,11 @@ func _update_sprite() -> void:
 	_sprite.scale = Vector2(sc, sc)
 	_sprite.position = Vector2(-cx * sc, 138.0 * s - _sprite_used_rect.end.y * sc + bob)
 
+## v0.4: where her body is, in her own coordinates (feet at +142*scale, head near -124*scale).
+func get_body_rect() -> Rect2:
+	var s: float = character_scale
+	return Rect2(-70.0 * s, -132.0 * s, 140.0 * s, 276.0 * s)
+
 func is_moving() -> bool:
 	return _is_moving
 

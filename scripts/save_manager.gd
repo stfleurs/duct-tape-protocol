@@ -4,7 +4,7 @@ signal save_data_changed()
 signal settings_changed(new_settings: Dictionary)
 
 const DEFAULT_SAVE_PATH: String = "user://save_data.json"
-const SAVE_VERSION: int = 1
+const SAVE_VERSION: int = 2
 const ROOM_ORDER: Array[String] = [
 	"engine_room",
 	"life_support",
@@ -39,12 +39,28 @@ func get_default_data() -> Dictionary:
 			"cargo_bay": 0
 		},
 		"tutorial_completed": false,
+		# v0.4: badges, lifetime stats, daily login streak, daily shift
+		"achievements": {},
+		"stats": get_default_stats(),
+		"streak": {"last_login": "", "count": 0, "best": 0},
+		"daily": {"last_completed": "", "best_score": 0, "best_date": ""},
 		"settings": {
 			"sound_enabled": true,
 			"music_enabled": true,
 			"vibration_enabled": true
 		}
 	}
+
+const STAT_INT_KEYS: Array[String] = [
+	"fixes_total", "shifts_completed", "chains_survived", "breaches_fixed",
+	"pickups_total", "best_combo", "dailies_completed", "clean_dashes", "shifts_started"
+]
+
+func get_default_stats() -> Dictionary:
+	var st: Dictionary = {"fixes_by_type": {}}
+	for k in STAT_INT_KEYS:
+		st[k] = 0
+	return st
 
 func reset_to_defaults() -> void:
 	data = get_default_data()
@@ -103,6 +119,31 @@ func _sanitize_data(loaded: Dictionary, defaults: Dictionary) -> Dictionary:
 
 	if typeof(loaded.get("tutorial_completed")) == TYPE_BOOL:
 		clean["tutorial_completed"] = loaded["tutorial_completed"]
+
+	# v0.4 fields (a v0.3 save simply has none of them: defaults stay)
+	if typeof(loaded.get("achievements")) == TYPE_DICTIONARY:
+		for a_id in loaded["achievements"].keys():
+			if typeof(loaded["achievements"][a_id]) in [TYPE_INT, TYPE_FLOAT]:
+				clean["achievements"][String(a_id)] = int(loaded["achievements"][a_id])
+	if typeof(loaded.get("stats")) == TYPE_DICTIONARY:
+		var ls: Dictionary = loaded["stats"]
+		for k in STAT_INT_KEYS:
+			if typeof(ls.get(k)) in [TYPE_INT, TYPE_FLOAT]:
+				clean["stats"][k] = maxi(0, int(ls[k]))
+		if typeof(ls.get("fixes_by_type")) == TYPE_DICTIONARY:
+			for fid in ls["fixes_by_type"].keys():
+				if typeof(ls["fixes_by_type"][fid]) in [TYPE_INT, TYPE_FLOAT]:
+					clean["stats"]["fixes_by_type"][String(fid)] = maxi(0, int(ls["fixes_by_type"][fid]))
+	if typeof(loaded.get("streak")) == TYPE_DICTIONARY:
+		var lst: Dictionary = loaded["streak"]
+		clean["streak"]["last_login"] = String(lst.get("last_login", ""))
+		clean["streak"]["count"] = maxi(0, int(lst.get("count", 0))) if typeof(lst.get("count")) in [TYPE_INT, TYPE_FLOAT] else 0
+		clean["streak"]["best"] = maxi(0, int(lst.get("best", 0))) if typeof(lst.get("best")) in [TYPE_INT, TYPE_FLOAT] else 0
+	if typeof(loaded.get("daily")) == TYPE_DICTIONARY:
+		var ld: Dictionary = loaded["daily"]
+		clean["daily"]["last_completed"] = String(ld.get("last_completed", ""))
+		clean["daily"]["best_date"] = String(ld.get("best_date", ""))
+		clean["daily"]["best_score"] = maxi(0, int(ld.get("best_score", 0))) if typeof(ld.get("best_score")) in [TYPE_INT, TYPE_FLOAT] else 0
 
 	if typeof(loaded.get("settings")) == TYPE_DICTIONARY:
 		for key in ["sound_enabled", "music_enabled", "vibration_enabled"]:
@@ -199,3 +240,55 @@ func set_setting(key: String, value: Variant) -> void:
 	save_game()
 	settings_changed.emit(data["settings"])
 	save_data_changed.emit()
+
+# ------------------------------------------------------------------ v0.4 helpers
+func _ensure() -> void:
+	if data.is_empty():
+		data = get_default_data()
+	for key in ["achievements", "stats", "streak", "daily"]:
+		if not data.has(key):
+			data[key] = get_default_data()[key]
+
+func get_stats() -> Dictionary:
+	_ensure()
+	return data["stats"]
+
+func get_stat(key: String) -> int:
+	return int(get_stats().get(key, 0))
+
+func add_stat(key: String, amount: int = 1, save_now: bool = true) -> int:
+	_ensure()
+	var v: int = int(data["stats"].get(key, 0)) + amount
+	data["stats"][key] = v
+	if save_now:
+		save_game()
+	return v
+
+func set_stat_max(key: String, value: int, save_now: bool = true) -> void:
+	_ensure()
+	data["stats"][key] = maxi(int(data["stats"].get(key, 0)), value)
+	if save_now:
+		save_game()
+
+func add_fix_of_type(failure_id: String) -> void:
+	_ensure()
+	var by: Dictionary = data["stats"]["fixes_by_type"]
+	by[failure_id] = int(by.get(failure_id, 0)) + 1
+
+func is_achievement_unlocked(a_id: String) -> bool:
+	_ensure()
+	return data["achievements"].has(a_id)
+
+func mark_achievement(a_id: String) -> void:
+	_ensure()
+	data["achievements"][a_id] = int(Time.get_unix_time_from_system())
+	save_game()
+	save_data_changed.emit()
+
+func get_streak() -> Dictionary:
+	_ensure()
+	return data["streak"]
+
+func get_daily() -> Dictionary:
+	_ensure()
+	return data["daily"]

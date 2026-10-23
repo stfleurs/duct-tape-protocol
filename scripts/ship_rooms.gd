@@ -28,6 +28,7 @@ const ROOMS: Dictionary = {
 		"pool": ["pipe_leak", "pipe_hairline", "pipe_joint_leak", "sparking_panel", "overheating_engine", "fuse_blown", "vent_clogged", "door_jammed"],
 		"music": "engine_room_loop",
 		"ambience": "engine_room_ambience_loop",
+		"look": {"tint": Color(1.0, 0.50, 0.12), "grade": 0.55, "bright": 1.04, "accent": Color(1.0, 0.56, 0.12), "light": Color(1.0, 0.58, 0.18), "band": Color(0.86, 0.36, 0.06), "pulse": 0.0},
 		"quip": "Engine room. Try not to dent anything expensive."
 	},
 	"cargo_bay": {
@@ -43,6 +44,7 @@ const ROOMS: Dictionary = {
 		"pool": ["door_jammed", "cable_loose", "pipe_frozen", "hull_breach", "vent_clogged", "pipe_hairline", "fuse_blown"],
 		"music": "engine_room_loop",
 		"ambience": "engine_room_ambience_loop",
+		"look": {"tint": Color(0.16, 0.86, 0.70), "grade": 0.46, "bright": 1.02, "accent": Color(0.22, 0.92, 0.74), "light": Color(0.30, 1.0, 0.78), "band": Color(0.06, 0.56, 0.48), "pulse": 0.0},
 		"quip": "The cargo bay. Mind the crates. They're worth more than you."
 	},
 	"reactor": {
@@ -58,6 +60,7 @@ const ROOMS: Dictionary = {
 		"pool": ["overheating_engine", "pipe_frozen", "pipe_joint_leak", "pipe_leak", "sparking_panel", "cable_loose", "hull_breach"],
 		"music": "engine_room_loop",
 		"ambience": "engine_room_ambience_loop",
+		"look": {"tint": Color(0.62, 0.22, 1.0), "grade": 0.45, "bright": 0.90, "accent": Color(0.80, 0.45, 1.0), "light": Color(0.78, 0.32, 1.0), "band": Color(0.42, 0.10, 0.72), "pulse": 1.0},
 		"quip": "The reactor. Please don't touch the glowing part. Or any part."
 	},
 	"bridge": {
@@ -73,12 +76,20 @@ const ROOMS: Dictionary = {
 		"pool": ["sparking_panel", "cable_loose", "fuse_blown", "hull_breach", "door_jammed", "vent_clogged", "pipe_hairline"],
 		"music": "engine_room_loop",
 		"ambience": "engine_room_ambience_loop",
+		"look": {"tint": Color(0.26, 0.58, 1.0), "grade": 0.46, "bright": 1.02, "accent": Color(0.38, 0.74, 1.0), "light": Color(0.42, 0.78, 1.0), "band": Color(0.10, 0.34, 0.78), "pulse": 0.0},
 		"quip": "The bridge! Where I do my best thinking. Don't breathe on the consoles."
 	}
 }
 
 ## Height of each kind of spot above the line where the back wall meets the floor ("wall"),
 ## in 0..1 of the room picture. Nadine's feet are on the "floor" line in front of the wall.
+## v0.4: spots alternate between the wall (high row) and the floor band in front of Nadine (low row),
+## so problems are spread over the whole room and not bunched up at the top.
+## Height BELOW the floor line for the low row, in 0..1 of the room picture.
+const LOW_DEPTH: Dictionary = {
+	"pipe": 0.115, "valve": 0.125, "vent": 0.13, "cable": 0.105, "hull": 0.145, "fuse": 0.12
+}
+
 const KIND_HEIGHT: Dictionary = {
 	"pipe": 0.06, "valve": 0.06, "relay": 0.16, "fuse": 0.15, "hull": 0.17,
 	"cable": 0.035, "vent": 0.22, "hatch": 0.09
@@ -126,15 +137,23 @@ static func get_anchors(room_id: String) -> Array[Dictionary]:
 	var wall: float = float(room.get("wall", float(room["floor"]) - 0.1))
 	var n: int = slots.size()
 	var counts: Dictionary = {}
+	var flo: float = float(room["floor"])
+	var low_turn: int = 0
 	for i in range(n):
 		var kind: String = String(slots[i])
 		counts[kind] = int(counts.get(kind, 0)) + 1
-		var x: float = lerpf(0.19, 0.81, float(i) / float(maxi(1, n - 1)))
+		var x: float = lerpf(0.16, 0.84, float(i) / float(maxi(1, n - 1)))
+		var low: bool = false
+		if LOW_DEPTH.has(kind):
+			low_turn += 1
+			low = low_turn % 2 == 0 # every other floor-capable spot goes low
+		var y: float = flo + float(LOW_DEPTH[kind]) if low else wall - float(KIND_HEIGHT.get(kind, 0.1))
 		out.append({
 			"id": "%s_%d" % [kind, int(counts[kind])],
 			"kind": kind,
 			"x": x,
-			"y": wall - float(KIND_HEIGHT.get(kind, 0.1))
+			"y": y,
+			"row": "low" if low else "high"
 		})
 	return out
 
@@ -147,6 +166,13 @@ static func get_anchor_pool(room_id: String) -> Dictionary:
 			pool[kind] = []
 		(pool[kind] as Array).append(String(a["id"]))
 	return pool
+
+## id -> {"x", "y", "row"} for FailureManager.set_anchor_meta() (spreads problems around the room).
+static func anchor_meta(room_id: String) -> Dictionary:
+	var meta: Dictionary = {}
+	for a in get_anchors(room_id):
+		meta[String(a["id"])] = {"x": float(a["x"]), "y": float(a["y"]), "row": String(a.get("row", "high"))}
+	return meta
 
 ## Builds one shift: 3-4 rooms (order varies) with short corridor dashes between some of them.
 ##   [{"type": "room", "room_id", "quota", "difficulty", "max_active"}, {"type": "dash", "duration"}, ...]
@@ -166,7 +192,8 @@ static func build_plan(start_room: String, level_number: int, seed_value: int = 
 		var tmp = others[i]
 		others[i] = others[j]
 		others[j] = tmp
-	var room_count: int = 3 if level_number <= 1 else 4
+	# v0.4: short shifts (the first one is about a minute), 4 rooms from level 3 on
+	var room_count: int = 3 if level_number <= 2 else 4
 	var rooms: Array = [first]
 	for r in others:
 		if rooms.size() >= room_count:
@@ -176,19 +203,44 @@ static func build_plan(start_room: String, level_number: int, seed_value: int = 
 	var dashes: int = 0
 	for i in range(rooms.size()):
 		var diff: float = float(i) / float(maxi(1, rooms.size() - 1))
+		var quota: int = 2 + i + (1 if level_number >= 3 else 0) + (1 if level_number >= 5 else 0)
+		if level_number <= 1:
+			quota = [2, 2, 3][mini(i, 2)] # first shift: about a minute
 		plan.append({
 			"type": "room",
 			"room_id": String(rooms[i]),
-			"quota": 3 + i + clampi(level_number - 1, 0, 3),
+			"quota": quota,
 			"difficulty": clampf(diff * 0.85 + float(level_number - 1) * 0.1, 0.0, 1.0),
 			"max_active": 2 if i == 0 else 3
 		})
 		if i < rooms.size() - 1:
 			# always a dash after the first room, then about every other door
-			if i == 0 or (rng.randf() < 0.5 and dashes < 2):
-				plan.append({"type": "dash", "duration": rng.randf_range(6.0, 9.0)})
+			if i == 0 or (level_number > 1 and rng.randf() < 0.5 and dashes < 2):
+				plan.append({"type": "dash", "duration": rng.randf_range(5.0, 6.0) if level_number <= 1 else rng.randf_range(6.0, 8.0)})
 				dashes += 1
 	return plan
+
+## v0.4: a room's color identity (tint grade, accent colors, light) — see "look" in ROOMS.
+static func get_look(room_id: String) -> Dictionary:
+	return get_room(room_id).get("look", {})
+
+## Par time for a plan (the "fast" star): dashes + about 7 s per fix + a few seconds per door.
+static func par_time(plan: Array) -> float:
+	var par: float = 0.0
+	for s in plan:
+		if String(s.get("type", "")) == "dash":
+			par += float(s.get("duration", 6.0)) + 1.5
+		else:
+			par += float(s.get("quota", 3)) * 7.0 + 5.0
+	return snappedf(par, 5.0)
+
+## Alert level 0..3 for the look of a room: later ship-map levels and the last room of a shift
+## get darker, with red alert lights and more steam.
+static func alert_level(level_number: int, room_index: int, room_count: int) -> int:
+	var a: int = clampi(level_number - 1, 0, 3)
+	if level_number >= 2 and room_index == room_count - 1:
+		a += 1
+	return clampi(a, 0, 3)
 
 static func count_rooms(plan: Array) -> int:
 	var n: int = 0

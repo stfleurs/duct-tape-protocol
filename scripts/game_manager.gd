@@ -6,12 +6,16 @@ const SCENE_MAIN_MENU: String = "res://scenes/main_menu/main_menu.tscn"
 const SCENE_SHIP_MAP: String = "res://scenes/ship_map/ship_map.tscn"
 const SCENE_GAMEPLAY: String = "res://scenes/gameplay/gameplay_screen.tscn"
 const SCENE_RESULTS: String = "res://scenes/results/shift_results.tscn"
+const SCENE_ACHIEVEMENTS: String = "res://scenes/achievements/achievements.tscn"
 
 var selected_room_id: String = "engine_room"
 var last_shift_results: Dictionary = {}
 var is_in_active_shift: bool = false
 var auto_paused_by_os: bool = false
 var shift_duration_override: float = -1.0 # Used for quick testing if > 0
+## v0.4: Daily Shift (same seed for everyone today) and where the badges screen goes back to
+var daily_mode: bool = false
+var achievements_return_scene: String = SCENE_MAIN_MENU
 
 var _room_resources: Dictionary = {
 	"engine_room": "res://resources/levels/room_1_engine.tres",
@@ -59,7 +63,17 @@ func go_to_ship_map() -> void:
 	set_shift_paused(false)
 	get_tree().change_scene_to_file(SCENE_SHIP_MAP)
 
-func start_shift(room_id: String = "engine_room") -> void:
+func start_daily_shift() -> void:
+	start_shift("engine_room", true)
+
+func go_to_achievements(return_scene: String = SCENE_MAIN_MENU) -> void:
+	achievements_return_scene = return_scene
+	is_in_active_shift = false
+	set_shift_paused(false)
+	get_tree().change_scene_to_file(SCENE_ACHIEVEMENTS)
+
+func start_shift(room_id: String = "engine_room", daily: bool = false) -> void:
+	daily_mode = daily
 	selected_room_id = room_id
 	is_in_active_shift = true
 	set_shift_paused(false)

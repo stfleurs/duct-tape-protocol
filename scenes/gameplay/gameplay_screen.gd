@@ -40,6 +40,18 @@ var _pause_modal: Control
 var _pause_card: PanelContainer
 var _fade: ColorRect
 var _title_card: Label
+var _title_band: Control
+var _title_text: Array[String] = ["", ""]
+var _title_color: Color = Color(0.86, 0.36, 0.06)
+var _combo_label: Label
+var _combo_tween: Tween
+var _toast: BadgeToast
+var _alert_flash: ColorRect
+var _alert_level: int = 0
+var _alert_t: float = 0.0
+var _accent: Color = DuctTapeUI.COLOR_ORANGE_TOP
+var level_number: int = 1
+var daily_seed: int = -1
 
 var _engaged_iid: int = -1
 var _engaged_anchor: String = ""
@@ -74,7 +86,10 @@ func _build_scene_hierarchy() -> void:
 	dash.visible = false
 	dash.hazard_hit.connect(_on_dash_hit)
 	dash.item_picked.connect(func(_kind: String) -> void: level_manager.add_pickup(1))
-	dash.dash_finished.connect(func(_p: int, _h: int) -> void: _leave_segment())
+	dash.dash_finished.connect(func(p: int, h: int) -> void:
+		RewardManager.record_dash(h, p)
+		_leave_segment()
+	)
 	add_child(dash)
 
 	# 3. In-room repair input + feedback layer
@@ -92,17 +107,11 @@ func _build_scene_hierarchy() -> void:
 	)
 	add_child(in_room)
 
-	# 4. Compact toolbelt: shows the tool Nadine grabbed (auto-picked); tapping is optional
+	# 4. (v0.4) no tool bar: the right tool is picked automatically when you touch a problem
 	_toolbelt = Control.new()
+	_toolbelt.visible = false
 	_toolbelt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_toolbelt)
-	var tool_configs: Array[Dictionary] = [
-		{"id": "duct_tape", "label": "TAPE", "unlocked": true},
-		{"id": "wrench", "label": "WRENCH", "unlocked": true},
-		{"id": "sealant", "label": "SEALANT", "unlocked": false}
-	]
-	for cfg in tool_configs:
-		_toolbelt.add_child(_create_tool_chip(String(cfg["id"]), String(cfg["label"]), bool(cfg["unlocked"])))
 
 	# 5. Banner (readable, under the HUD)
 	_banner = PanelContainer.new()
@@ -142,16 +151,29 @@ func _build_scene_hierarchy() -> void:
 	_fade.color = Color(0.05, 0.02, 0.12, 0.0)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_fade)
-	_title_card = Label.new()
-	_title_card.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_card.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_title_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_title_card.add_theme_font_size_override("font_size", 58)
-	_title_card.add_theme_color_override("font_color", Color(1.0, 0.9, 0.4))
-	_title_card.add_theme_color_override("font_outline_color", DuctTapeUI.COLOR_OUTLINE)
-	_title_card.add_theme_constant_override("outline_size", 16)
-	_title_card.modulate.a = 0.0
+	_title_band = Control.new()
+	_title_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_title_band.draw.connect(_draw_title_band)
+	_title_band.modulate.a = 0.0
+	add_child(_title_band)
+	_title_card = Label.new() # kept for older callers (screenshots); the band draws the card
+	_title_card.visible = false
 	add_child(_title_card)
+
+	# 7b. Combo counter + badge toast (v0.4)
+	_combo_label = _hud_label("", 40, Color(1.0, 0.86, 0.25))
+	_combo_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_combo_label.add_theme_constant_override("outline_size", 12)
+	_combo_label.modulate.a = 0.0
+	add_child(_combo_label)
+	_toast = BadgeToast.new()
+	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_toast)
+	_alert_flash = ColorRect.new()
+	_alert_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_alert_flash.color = Color(1, 0.1, 0.1, 0.0)
+	add_child(_alert_flash)
+	move_child(_alert_flash, 1)
 
 	# 8. One compact top bar: health, score, timer, pause + room name / room progress
 	_build_top_bar()
@@ -176,6 +198,8 @@ func _build_scene_hierarchy() -> void:
 	level_manager.room_progress_changed.connect(_on_room_progress)
 	level_manager.room_cleared.connect(_on_room_cleared)
 	level_manager.chain_reaction.connect(_on_chain_reaction)
+	level_manager.combo_changed.connect(_on_combo_changed)
+	RewardManager.achievement_unlocked.connect(_on_badge_unlocked)
 
 func _hud_label(text: String, font_size: int, color: Color) -> Label:
 	var l := Label.new()
@@ -276,8 +300,13 @@ func _layout() -> void:
 	_shift_fill.size = Vector2((w - 350.0 - 22.0) * _time_ratio, 12)
 	if _fade != null:
 		_fade.size = Vector2(w, h)
-		_title_card.position = Vector2(0, h * 0.36)
-		_title_card.size = Vector2(w, 260)
+		_title_band.position = Vector2(0, h * 0.30)
+		_title_band.size = Vector2(w, 250)
+		_alert_flash.size = Vector2(w, h)
+		_combo_label.position = Vector2(w - 380.0, HUD_H + 150.0)
+		_combo_label.size = Vector2(360, 60)
+		_toast.position = Vector2(20, HUD_H + 12.0)
+		_toast.size = Vector2(w - 40.0, 132)
 	if dash != null:
 		dash.top_inset = HUD_H
 	# banner
@@ -285,16 +314,6 @@ func _layout() -> void:
 	_banner.custom_minimum_size = Vector2(w - 32.0, 60)
 	_banner_label.custom_minimum_size = Vector2(w - 64.0, 0)
 	_banner.reset_size()
-	# toolbelt sits on the floor strip at the bottom
-	_toolbelt.position = Vector2(0, h - TOOLBELT_H)
-	_toolbelt.size = Vector2(w, TOOLBELT_H)
-	var chip_w: float = 186.0
-	var gap: float = 18.0
-	var x0: float = (w - (chip_w * 3.0 + gap * 2.0)) * 0.5
-	var idx: int = 0
-	for chip in _toolbelt.get_children():
-		(chip as Control).position = Vector2(x0 + float(idx) * (chip_w + gap), 10)
-		idx += 1
 	if _pause_card != null:
 		_pause_card.position = Vector2((w - 540.0) * 0.5, (h - 480.0) * 0.5)
 
@@ -393,7 +412,7 @@ func _build_pause_modal() -> void:
 	DuctTapeUI.style_pill_button(retry_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 30, 38)
 	retry_btn.pressed.connect(func() -> void:
 		AudioManager.play_sfx("button")
-		GameManager.start_shift(GameManager.selected_room_id)
+		GameManager.start_shift(GameManager.selected_room_id, GameManager.daily_mode)
 	)
 	vbox.add_child(retry_btn)
 
@@ -429,16 +448,28 @@ func _build_pause_modal() -> void:
 
 # ------------------------------------------------------------------ shift flow
 func _start_configured_shift() -> void:
-	var lvl: LevelData = GameManager.load_level_data(GameManager.selected_room_id)
+	var daily: bool = GameManager.daily_mode
+	var lvl: LevelData = GameManager.load_level_data("engine_room" if daily else GameManager.selected_room_id)
 	var tape_res: ToolData = load("res://resources/tools/duct_tape.tres") as ToolData
 	var wrench_res: ToolData = load("res://resources/tools/wrench.tres") as ToolData
 	level_manager.setup_shift(lvl, [tape_res, wrench_res], ShipRooms.load_all_failures(), GameManager.shift_duration_override)
-	plan = ShipRooms.build_plan(GameManager.selected_room_id, lvl.room_number if lvl != null else 1)
+	level_manager.is_daily = daily
+	RewardManager.begin_shift()
+	if daily:
+		# Daily Shift: the same rooms, problems and spots for everyone today
+		var today: String = Achievements.today()
+		daily_seed = Achievements.daily_seed(today)
+		level_number = 2
+		level_manager.rng.seed = daily_seed
+		level_manager.failure_manager.rng.seed = daily_seed + 1
+		plan = ShipRooms.build_plan(Achievements.daily_start_room(today), level_number, daily_seed)
+	else:
+		daily_seed = -1
+		level_number = lvl.room_number if lvl != null else 1
+		plan = ShipRooms.build_plan(GameManager.selected_room_id, level_number)
+	level_manager.shift_level_number = level_number
 	room_count = ShipRooms.count_rooms(plan)
-	var par: float = 0.0
-	for s in plan:
-		par += float(s.get("duration", 0.0)) + float(s.get("quota", 0)) * 9.0
-	level_manager.par_time_sec = par
+	level_manager.par_time_sec = ShipRooms.par_time(plan)
 	segment_index = -1
 	room_number = 0
 	_start_next_segment(true)
@@ -467,12 +498,14 @@ func _start_room(s: Dictionary, first: bool) -> void:
 	in_room.mouse_filter = Control.MOUSE_FILTER_STOP
 	dash.visible = false
 	dash.running = false
-	_toolbelt.visible = true
 	in_room.reset_all()
 	_engaged_iid = -1
 	_engaged_anchor = ""
 	room_view.load_room(rid)
 	var room: Dictionary = ShipRooms.get_room(rid)
+	_alert_level = ShipRooms.alert_level(level_number, room_number - 1, room_count)
+	room_view.set_look(ShipRooms.get_look(rid), _alert_level)
+	_apply_room_accent(ShipRooms.get_look(rid))
 	level_manager.begin_room(rid, PackedStringArray(room.get("pool", [])), ShipRooms.get_anchor_pool(rid),
 		int(s.get("quota", 3)), float(s.get("difficulty", 0.0)), int(s.get("max_active", 3)),
 		"pipe_leak" if first and rid == "engine_room" else "")
@@ -480,17 +513,21 @@ func _start_room(s: Dictionary, first: bool) -> void:
 	_shift_label.text = "ROOM %d/%d  %s" % [room_number, room_count, String(room.get("name", ""))]
 	AudioManager.play_music(String(room.get("music", "engine_room_loop")))
 	AudioManager.play_ambience(String(room.get("ambience", "engine_room_ambience_loop")))
-	_show_title("ROOM %d/%d\n%s" % [room_number, room_count, String(room.get("name", ""))])
-	var quip: String = "Welcome to your shift, Chief. Try not to smudge my hull." if first else String(room.get("quip", ""))
+	_show_title_band("ROOM %d/%d" % [room_number, room_count], String(room.get("name", "")), Color(ShipRooms.get_look(rid).get("band", Color(0.86, 0.36, 0.06))))
+	var quip: String = String(room.get("quip", ""))
+	if first:
+		quip = "Daily Shift! Same mess for everyone today. Beat them." if GameManager.daily_mode else "Welcome to your shift, Chief. Try not to smudge my hull."
+	Quips.remember(quip)
 	room_view.pristine.say(quip, "skeptical", 4.0)
 
 func _start_dash(s: Dictionary) -> void:
 	room_view.visible = false
 	in_room.visible = false
 	in_room.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_toolbelt.visible = false
 	dash.visible = true
-	dash.setup(float(s.get("duration", 7.0)))
+	dash.setup(float(s.get("duration", 7.0)), daily_seed + segment_index if daily_seed >= 0 else -1)
+	_alert_level = 0
+	_apply_room_accent({"accent": DuctTapeUI.COLOR_ORANGE_TOP})
 	_shift_label.text = "CORRIDOR DASH  > ROOM %d/%d" % [room_number + 1, room_count]
 	_time_ratio = 0.0
 	_layout()
@@ -498,7 +535,7 @@ func _start_dash(s: Dictionary) -> void:
 	AudioManager.play_music("runner_loop")
 	_set_banner_text("Run for the next door!")
 	_banner.reset_size()
-	_show_title("CORRIDOR DASH!")
+	_show_title_band("NEXT DOOR >>", "CORRIDOR DASH!", Color(0.80, 0.22, 0.12))
 
 func _on_room_cleared() -> void:
 	room_view.open_exit()
@@ -507,7 +544,7 @@ func _on_room_cleared() -> void:
 	_set_banner_text("ROOM CLEAR! The door is open, head out >>" if room_number < room_count else "LAST ROOM CLEAR! Get to the door to finish your shift >>")
 	_banner.reset_size()
 	room_view.nadine.cheer(1.0)
-	room_view.pristine.say("Systems stable. For now. Move along, Chief.", "smug", 3.0)
+	room_view.pristine.say(Quips.pick(["Systems stable. For now. Move along, Chief.", "Room fixed. Barely. Next!", "Door's open. Don't let it hit you.", "Fine, it holds. Go, go, go!"]), "smug", 3.0)
 	get_tree().create_timer(0.9).timeout.connect(func() -> void:
 		if is_instance_valid(self) and _segment_kind == "room" and room_view.exit_open:
 			_head_to_exit()
@@ -545,6 +582,78 @@ func _show_title(text: String) -> void:
 	tw.tween_interval(1.1)
 	tw.tween_property(_title_card, "modulate:a", 0.0, 0.5)
 
+## v0.4 room title card: a full-width color band in the room's color, "ROOM 2/4" small, the name big.
+func _show_title_band(small: String, big: String, band: Color) -> void:
+	_title_text = [small, big]
+	_title_color = band
+	_title_band.queue_redraw()
+	_title_band.modulate.a = 1.0
+	_title_band.position.x = -size.x
+	var tw := create_tween()
+	tw.tween_property(_title_band, "position:x", 0.0, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.85)
+	tw.tween_property(_title_band, "modulate:a", 0.0, 0.25)
+
+func _draw_title_band() -> void:
+	var w: float = _title_band.size.x
+	var hh: float = _title_band.size.y
+	var ol: Color = DuctTapeUI.COLOR_OUTLINE
+	var r := Rect2(0, 30, w, hh - 60)
+	_title_band.draw_rect(r.grow_individual(0, 10, 0, 10), Color(0, 0, 0, 0.35), true)
+	_title_band.draw_rect(r, _title_color, true)
+	_title_band.draw_rect(Rect2(0, r.position.y + r.size.y * 0.5, w, r.size.y * 0.5), _title_color.darkened(0.18), true)
+	# gold trim lines + hazard ticks
+	_title_band.draw_rect(Rect2(0, r.position.y - 8, w, 8), DuctTapeUI.COLOR_GOLD, true)
+	_title_band.draw_rect(Rect2(0, r.end.y, w, 8), DuctTapeUI.COLOR_GOLD, true)
+	_title_band.draw_line(Vector2(0, r.position.y - 8), Vector2(w, r.position.y - 8), ol, 3.0)
+	_title_band.draw_line(Vector2(0, r.end.y + 8), Vector2(w, r.end.y + 8), ol, 3.0)
+	var font: Font = ThemeDB.fallback_font
+	_title_band.draw_string_outline(font, Vector2(0, r.position.y + 52), _title_text[0], HORIZONTAL_ALIGNMENT_CENTER, w, 34, 10, ol)
+	_title_band.draw_string(font, Vector2(0, r.position.y + 52), _title_text[0], HORIZONTAL_ALIGNMENT_CENTER, w, 34, Color(1.0, 0.94, 0.75))
+	var big_size: int = 64 if _title_text[1].length() <= 14 else 52
+	_title_band.draw_string_outline(font, Vector2(0, r.position.y + 128), _title_text[1], HORIZONTAL_ALIGNMENT_CENTER, w, big_size, 16, ol)
+	_title_band.draw_string(font, Vector2(0, r.position.y + 128), _title_text[1], HORIZONTAL_ALIGNMENT_CENTER, w, big_size, Color.WHITE)
+
+## HUD picks up the room's color: the room name and the room-progress bar.
+func _apply_room_accent(look: Dictionary) -> void:
+	_accent = look.get("accent", DuctTapeUI.COLOR_ORANGE_TOP)
+	_shift_label.add_theme_color_override("font_color", _accent)
+	_shift_fill.color = _accent
+	var st: StyleBoxFlat = _top_bar.get_theme_stylebox("panel") as StyleBoxFlat
+	if st != null:
+		st.border_color = _accent.darkened(0.25)
+		st.border_width_bottom = 6
+
+func _on_combo_changed(count: int, mult: float) -> void:
+	if count < 2:
+		if _combo_label.modulate.a > 0.0:
+			var tw0 := create_tween()
+			tw0.tween_property(_combo_label, "modulate:a", 0.0, 0.3)
+		return
+	_combo_label.text = "COMBO x%d\nPOINTS x%s" % [count, String.num(mult, 2).trim_suffix("0").trim_suffix(".")]
+	_combo_label.add_theme_font_size_override("font_size", mini(34 + count * 3, 56))
+	var hot: Color = Color(1.0, 0.86, 0.25).lerp(Color(1.0, 0.35, 0.15), clampf(float(count - 2) / 6.0, 0.0, 1.0))
+	_combo_label.add_theme_color_override("font_color", hot)
+	_combo_label.modulate.a = 1.0
+	_combo_label.pivot_offset = Vector2(_combo_label.size.x, 30)
+	if _combo_tween != null:
+		_combo_tween.kill()
+	_combo_label.scale = Vector2(1.35, 1.35)
+	_combo_tween = create_tween()
+	_combo_tween.tween_property(_combo_label, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if count >= 3:
+		_shake_t = maxf(_shake_t, 0.18)
+
+func _on_badge_unlocked(def: Dictionary) -> void:
+	if not is_inside_tree():
+		return
+	_toast.show_badge(def)
+	AudioManager.play_sfx("coin_scrap_pickup", 1.2)
+	get_tree().create_timer(0.15).timeout.connect(func() -> void: AudioManager.play_sfx("repair_success", 1.5))
+	AudioManager.trigger_haptic(60)
+	if room_view != null and room_view.pristine != null:
+		room_view.pristine.say(Quips.pick(Quips.BADGE), "happy", 3.5)
+
 func _on_dash_hit(kind: String) -> void:
 	level_manager.runner_hits += 1
 	level_manager.apply_damage(dash.damage_per_hit)
@@ -554,6 +663,14 @@ func _on_dash_hit(kind: String) -> void:
 func _process(delta: float) -> void:
 	if level_manager == null:
 		return
+	# red-alert flashes on later levels (and the last room of a shift)
+	_alert_t += delta
+	if _alert_level >= 2 and _segment_kind == "room":
+		var period: float = 1.6 if _alert_level == 2 else 1.1
+		var ph: float = fposmod(_alert_t, period) / period
+		_alert_flash.color.a = (0.10 if _alert_level == 2 else 0.15) * maxf(0.0, sin(ph * PI)) ** 2
+	elif _alert_flash.color.a > 0.0:
+		_alert_flash.color.a = 0.0
 	if _segment_kind == "dash":
 		if level_manager.shift_active:
 			level_manager.shift_elapsed += delta
@@ -630,7 +747,7 @@ func _banner_text() -> String:
 			var ed: FailureData = e["data"]
 			return "%s: %s" % [ed.display_name.to_upper(), ed.repair_instruction]
 	if active_list.is_empty():
-		return "All systems stable... for now."
+		return "Stay sharp, more is coming!"
 	elif active_list.size() == 1:
 		var f_data: FailureData = active_list[0]["data"]
 		return "%s! Touch it to fix it." % f_data.display_name.to_upper()

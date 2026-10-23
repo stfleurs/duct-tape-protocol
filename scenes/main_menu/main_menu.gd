@@ -3,6 +3,12 @@ extends Control
 var _nadine: NadineCharacter
 var _pristine: PristineHologram
 var _settings_modal: Control
+var _daily_btn: Button
+var _badges_btn: Button
+var _toast: BadgeToast
+var _streak: int = 0
+var _streak_bonus: int = 0
+var _streak_pop: float = 0.0
 
 var _bleed_off: Vector2 = Vector2.ZERO
 
@@ -33,8 +39,8 @@ func _build_ui() -> void:
 	# PLAY button (Orange pill, matching Concept Image 1)
 	var play_btn := Button.new()
 	play_btn.text = "PLAY"
-	play_btn.position = Vector2(160, 868)
-	play_btn.custom_minimum_size = Vector2(400, 112)
+	play_btn.position = Vector2(160, 846)
+	play_btn.custom_minimum_size = Vector2(400, 108)
 	DuctTapeUI.style_pill_button(play_btn, DuctTapeUI.COLOR_ORANGE_TOP, DuctTapeUI.COLOR_ORANGE_BOT, 58, 54)
 	play_btn.pressed.connect(func() -> void:
 		AudioManager.play_sfx("button")
@@ -42,12 +48,38 @@ func _build_ui() -> void:
 	)
 	add_child(play_btn)
 
+	# v0.4: DAILY SHIFT (same for everyone today, bonus scrap) + BADGES
+	var daily_btn := Button.new()
+	var done_today: bool = RewardManager.is_daily_done()
+	daily_btn.text = "DAILY SHIFT\n%s" % ("DONE TODAY - REPLAY" if done_today else "+%d BONUS SCRAP" % Achievements.DAILY_BONUS_SCRAP)
+	daily_btn.position = Vector2(56, 974)
+	daily_btn.custom_minimum_size = Vector2(296, 96)
+	DuctTapeUI.style_pill_button(daily_btn, DuctTapeUI.COLOR_GREEN_TOP, DuctTapeUI.COLOR_GREEN_BOT, 26, 40)
+	daily_btn.pressed.connect(func() -> void:
+		AudioManager.play_sfx("button")
+		GameManager.start_daily_shift()
+	)
+	add_child(daily_btn)
+	_daily_btn = daily_btn
+
+	var badges_btn := Button.new()
+	badges_btn.text = "BADGES  %d/%d" % [RewardManager.unlocked_count(), Achievements.count()]
+	badges_btn.position = Vector2(368, 974)
+	badges_btn.custom_minimum_size = Vector2(296, 96)
+	DuctTapeUI.style_pill_button(badges_btn, Color(0.98, 0.80, 0.26), Color(0.82, 0.52, 0.08), 30, 40)
+	badges_btn.pressed.connect(func() -> void:
+		AudioManager.play_sfx("button")
+		GameManager.go_to_achievements(GameManager.SCENE_MAIN_MENU)
+	)
+	add_child(badges_btn)
+	_badges_btn = badges_btn
+
 	# LEVELS button (Purple pill, matching Concept Image 1)
 	var levels_btn := Button.new()
 	levels_btn.text = "LEVELS"
-	levels_btn.position = Vector2(162, 1002)
-	levels_btn.custom_minimum_size = Vector2(396, 94)
-	DuctTapeUI.style_pill_button(levels_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 42, 46)
+	levels_btn.position = Vector2(56, 1088)
+	levels_btn.custom_minimum_size = Vector2(296, 90)
+	DuctTapeUI.style_pill_button(levels_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 38, 44)
 	levels_btn.pressed.connect(func() -> void:
 		AudioManager.play_sfx("button")
 		GameManager.go_to_ship_map()
@@ -57,16 +89,50 @@ func _build_ui() -> void:
 	# SETTINGS button (Purple pill, matching Concept Image 1)
 	var settings_btn := Button.new()
 	settings_btn.text = "SETTINGS"
-	settings_btn.position = Vector2(162, 1114)
-	settings_btn.custom_minimum_size = Vector2(396, 94)
-	DuctTapeUI.style_pill_button(settings_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 42, 46)
+	settings_btn.position = Vector2(368, 1088)
+	settings_btn.custom_minimum_size = Vector2(296, 90)
+	DuctTapeUI.style_pill_button(settings_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 38, 44)
 	settings_btn.pressed.connect(func() -> void:
 		AudioManager.play_sfx("button")
 		_settings_modal.visible = true
 	)
 	add_child(settings_btn)
 
+	# v0.4: daily login streak (first open of the day pays scrap; a missed day resets it)
+	_toast = BadgeToast.new()
+	_toast.position = Vector2(20, 18)
+	_toast.size = Vector2(680, 132)
+	RewardManager.achievement_unlocked.connect(_on_badge)
+	var claim: Dictionary = RewardManager.claim_daily_login()
+	_streak = RewardManager.get_streak_count()
+	if bool(claim.get("new_day", false)):
+		_streak_bonus = int(claim.get("bonus", 0))
+		_streak_pop = 1.0
+		AudioManager.play_sfx("coin_scrap_pickup")
+		var msg: String = "Day %d in a row! +%d scrap. Don't break the streak." % [_streak, _streak_bonus]
+		if _streak == 1:
+			msg = "Welcome aboard, Chief. Come back tomorrow for a streak bonus." if not bool(claim.get("reset", false)) else "You missed a day. Streak back to 1. Tsk."
+		_pristine.say(msg, "happy" if _streak > 1 else "skeptical", 5.0)
+	_badges_btn.text = "BADGES  %d/%d" % [RewardManager.unlocked_count(), Achievements.count()]
+
 	_build_settings_modal()
+	add_child(_toast)
+
+func _exit_tree() -> void:
+	if RewardManager.achievement_unlocked.is_connected(_on_badge):
+		RewardManager.achievement_unlocked.disconnect(_on_badge)
+
+func _on_badge(def: Dictionary) -> void:
+	if _toast != null:
+		_toast.show_badge(def)
+
+func _process(delta: float) -> void:
+	if _streak_pop > 0.0:
+		_streak_pop = maxf(0.0, _streak_pop - delta * 0.6)
+		queue_redraw()
+
+func get_streak_shown() -> int:
+	return _streak
 
 func _build_settings_modal() -> void:
 	_settings_modal = Control.new()
@@ -172,6 +238,27 @@ func _draw() -> void:
 	_draw_logo_tier(Rect2(190, 62, 340, 86), "DUCT", 64)
 	_draw_logo_tier(Rect2(186, 152, 348, 86), "TAPE", 64)
 	_draw_logo_tier(Rect2(106, 242, 508, 92), "PROTOCOL", 60)
+
+	# v0.4: daily streak pill under the logo (right side, clear of Nadine)
+	if _streak > 0:
+		var grow: float = 1.0 + 0.25 * _streak_pop * absf(sin(_streak_pop * 12.0))
+		var pr := Rect2(402, 372, 296, 72)
+		var c: Vector2 = pr.get_center()
+		draw_set_transform(c, 0.0, Vector2(grow, grow))
+		var lr := Rect2(-pr.size * 0.5, pr.size)
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color(0.22, 0.12, 0.40, 0.95)
+		box.border_color = DuctTapeUI.COLOR_GOLD
+		box.set_border_width_all(4)
+		box.set_corner_radius_all(36)
+		draw_style_box(box, lr)
+		BadgeArt.draw_icon(self, lr.position + Vector2(40, 36), 26.0, "flame", true)
+		var t1: String = "%d-DAY STREAK" % _streak
+		draw_string_outline(ThemeDB.fallback_font, lr.position + Vector2(74, 34), t1, HORIZONTAL_ALIGNMENT_LEFT, 216, 26, 8, DuctTapeUI.COLOR_OUTLINE)
+		draw_string(ThemeDB.fallback_font, lr.position + Vector2(74, 34), t1, HORIZONTAL_ALIGNMENT_LEFT, 216, 26, Color(1.0, 0.86, 0.3))
+		var t2: String = ("+%d scrap today!" % _streak_bonus) if _streak_bonus > 0 else "come back tomorrow!"
+		draw_string(ThemeDB.fallback_font, lr.position + Vector2(74, 60), t2, HORIZONTAL_ALIGNMENT_LEFT, 216, 20, Color(0.92, 0.88, 1.0))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _draw_logo_tier(rect: Rect2, word: String, font_size: int) -> void:
 	# Bright orange outer glow

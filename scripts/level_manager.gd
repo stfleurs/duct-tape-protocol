@@ -15,6 +15,8 @@ signal shift_finished(results: Dictionary)
 signal room_progress_changed(fixed: int, total: int)
 signal room_cleared()
 signal chain_reaction(source: Dictionary, spawned: Dictionary, quip: String)
+## v0.4 combo: fixes done in quick succession (count 0 = combo over)
+signal combo_changed(count: int, multiplier: float)
 
 var level_data: LevelData
 var failure_manager: FailureManager = FailureManager.new()
@@ -53,6 +55,17 @@ var _chain_queue: Array[Dictionary] = [] # {"t": seconds, "source": inst, "failu
 var _last_spawned_id: String = ""
 var rng := RandomNumberGenerator.new()
 
+## v0.4 combo + daily
+const COMBO_WINDOW := 6.0
+var combo_count: int = 0
+var best_combo: int = 0
+var combo_timer: float = 0.0
+var is_daily: bool = false
+var shift_level_number: int = 1
+## Longest stretch (seconds) with nothing broken while a room still had problems to come (tests).
+var longest_idle: float = 0.0
+var _idle_t: float = 0.0
+
 var _spawn_timer: float = 1.5
 var _spawn_count: int = 0
 var _failure_resources: Array[FailureData] = []
@@ -87,6 +100,10 @@ func setup_shift(p_level_data: LevelData, p_tools: Array[ToolData], p_failures: 
 	rooms_cleared = 0
 	pickups = 0
 	runner_hits = 0
+	combo_count = 0
+	best_combo = 0
+	combo_timer = 0.0
+	longest_idle = 0.0
 	rng.randomize()
 	_spawn_count = 0
 	_spawn_timer = level_data.initial_spawn_delay_sec
@@ -115,7 +132,9 @@ func begin_room(p_room_id: String, pool_ids: PackedStringArray, anchor_pool: Dic
 	_last_spawned_id = ""
 	failure_manager.configure(_failure_resources, maxi(1, max_active))
 	failure_manager.set_anchor_pool(anchor_pool)
-	_spawn_timer = 1.2
+	failure_manager.set_anchor_meta(ShipRooms.anchor_meta(p_room_id))
+	_spawn_timer = 1.0
+	_idle_t = 0.0
 	shift_active = true
 	room_progress_changed.emit(room_fixed, get_room_total())
 
@@ -155,7 +174,20 @@ func _room_step(delta: float) -> void:
 		if float(c["t"]) <= 0.0:
 			_chain_queue.erase(c)
 			_fire_chain(c)
+	# combo runs out when there's no fix for a few seconds
+	if combo_count > 0:
+		combo_timer -= delta
+		if combo_timer <= 0.0:
+			combo_count = 0
+			combo_changed.emit(0, 1.0)
 	if room_spawned < room_quota:
+		# v0.4: never leave the player with nothing to do for long
+		if failure_manager.get_active_count() == 0 and _chain_queue.is_empty():
+			_spawn_timer = minf(_spawn_timer, 1.0)
+			_idle_t += delta
+			longest_idle = maxf(longest_idle, _idle_t)
+		else:
+			_idle_t = 0.0
 		_spawn_timer -= delta
 		if _spawn_timer <= 0.0:
 			_room_spawn()
@@ -181,7 +213,7 @@ func _room_spawn() -> void:
 			cands.erase(_last_spawned_id) # variety: not the same thing twice in a row
 		if not cands.is_empty():
 			fid = cands[rng.randi() % cands.size()]
-	var interval: float = lerpf(6.0, 3.4, room_difficulty) * rng.randf_range(0.75, 1.25)
+	var interval: float = lerpf(4.2, 2.6, room_difficulty) * rng.randf_range(0.8, 1.2)
 	if fid == "":
 		_spawn_timer = 1.0 # everything is busy: try again soon
 		return
@@ -190,6 +222,7 @@ func _room_spawn() -> void:
 		_spawn_timer = 1.0
 		return
 	room_spawned += 1
+	_idle_t = 0.0
 	_last_spawned_id = fid
 	_announce_spawn(spawned)
 	_spawn_timer = interval
@@ -199,8 +232,8 @@ func _announce_spawn(spawned: Dictionary) -> void:
 	AudioManager.play_sfx(f_data.spawn_sfx if f_data.spawn_sfx != "" else "alarm")
 	if f_data.urgent:
 		AudioManager.trigger_haptic(80)
-	if not f_data.pristine_spawn_lines.is_empty():
-		var line: String = f_data.pristine_spawn_lines[rng.randi() % f_data.pristine_spawn_lines.size()]
+	var line: String = Quips.pick(f_data.pristine_spawn_lines, Quips.SPAWN)
+	if line != "":
 		pristine_message_requested.emit(line, "shocked" if f_data.urgent else "skeptical")
 
 func _maybe_queue_chain(inst: Dictionary) -> void:
@@ -341,8 +374,21 @@ func complete_failure_repair(instance_id: int, repair_elapsed_sec: float) -> Dic
 		bool(inst.get("escalated", false)),
 		int(inst.get("wrong_tool_attempts", 0))
 	)
-	var pts: int = int(score_info["points"])
+	# v0.4 combo: quick fixes in a row multiply the points
+	if combo_timer > 0.0 and combo_count > 0:
+		combo_count += 1
+	else:
+		combo_count = 1
+	combo_timer = COMBO_WINDOW
+	best_combo = maxi(best_combo, combo_count)
+	var mult: float = ScoreManager.combo_multiplier(combo_count)
+	var pts: int = int(round(float(int(score_info["points"])) * mult))
+	score_info["points"] = pts
+	score_info["combo"] = combo_count
+	score_info["multiplier"] = mult
 	var callout: String = String(score_info["callout"])
+	if combo_count >= 2:
+		callout = "COMBO x%d!" % combo_count
 	current_score += pts
 	repairs_completed += 1
 
@@ -351,12 +397,18 @@ func complete_failure_repair(instance_id: int, repair_elapsed_sec: float) -> Dic
 	health_changed.emit(current_health, max_health)
 	score_changed.emit(current_score)
 
-	AudioManager.play_sfx("repair_success")
+	# each fix in a combo chimes a little higher
+	AudioManager.play_sfx("repair_success", minf(1.0 + 0.07 * float(combo_count - 1), 1.6))
 	AudioManager.trigger_haptic(35)
+	combo_changed.emit(combo_count, mult)
 
-	if not f_data.pristine_resolved_lines.is_empty():
-		var line: String = f_data.pristine_resolved_lines[randi() % f_data.pristine_resolved_lines.size()]
+	var line: String = Quips.pick(Quips.COMBO) if combo_count >= 3 and combo_count % 2 == 1 else Quips.pick(f_data.pristine_resolved_lines, Quips.FIX)
+	if line != "":
 		pristine_message_requested.emit(line, "smug")
+
+	RewardManager.record_fix(f_data.failure_id, bool(inst.get("chain", false)))
+	if combo_count >= 2:
+		RewardManager.record_combo(combo_count)
 
 	failure_resolved.emit(inst, pts, callout)
 
@@ -364,8 +416,8 @@ func complete_failure_repair(instance_id: int, repair_elapsed_sec: float) -> Dic
 		room_fixed += 1
 		_maybe_queue_chain(inst)
 		room_progress_changed.emit(room_fixed, get_room_total())
-		if failure_manager.get_active_count() == 0 and _spawn_timer > 1.5:
-			_spawn_timer = 1.5
+		if failure_manager.get_active_count() == 0 and _spawn_timer > 1.0:
+			_spawn_timer = 1.0
 		return score_info
 
 	# If room is completely clear and spawn timer is long, bring next emergency sooner so player isn't idle
@@ -391,27 +443,45 @@ func _finish_shift(survived: bool) -> void:
 		max_health,
 		current_score,
 		repairs_completed,
-		level_data
+		level_data,
+		shift_elapsed if room_mode else -1.0,
+		par_time_sec if room_mode else -1.0,
+		best_combo
 	)
-	results["room_id"] = level_data.room_id if level_data != null else "engine_room"
+	var rid: String = level_data.room_id if level_data != null else "engine_room"
+	results["room_id"] = rid
 	results["room_name"] = level_data.display_name if level_data != null else "ENGINE ROOM"
 	results["time_bonus"] = time_bonus
 	results["rooms_cleared"] = rooms_cleared
 	results["time_sec"] = shift_elapsed
+	results["par_time"] = par_time_sec
+	results["best_combo"] = best_combo
 	results["pickups"] = pickups
+	results["daily"] = is_daily
+	results["prev_best_stars"] = SaveManager.get_room_stars(rid)
+	results["prev_best_score"] = SaveManager.get_room_best_score(rid)
+	if is_daily:
+		results["room_name"] = "DAILY SHIFT"
+		results["prev_best_score"] = int(SaveManager.get_daily().get("best_score", 0)) if String(SaveManager.get_daily().get("best_date", "")) == Achievements.today() else 0
+		results["prev_best_stars"] = 0
 	if pickups > 0:
 		results["scrap_earned"] = int(results.get("scrap_earned", 0)) + pickups
 
 	var earned_scrap: int = int(results.get("scrap_earned", 0))
 	CurrencyManager.add_scrap(earned_scrap)
-	if survived:
+	if is_daily:
+		results["daily_bonus"] = RewardManager.record_daily_finish(int(results["total_score"]), survived)
+	elif survived:
 		SaveManager.record_shift_completion(
-			String(results["room_id"]),
+			rid,
 			int(results["total_score"]),
 			int(results["stars"])
 		)
+	if survived:
 		AudioManager.play_sfx("shift_win")
 	else:
 		AudioManager.play_sfx("shift_lose")
+	results["new_badges"] = RewardManager.record_shift_end(results)
+	results["badges_this_shift"] = RewardManager.unlocked_this_shift.duplicate()
 
 	shift_finished.emit(results)
