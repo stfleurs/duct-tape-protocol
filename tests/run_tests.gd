@@ -1007,9 +1007,10 @@ func _test_v04_clarity() -> void:
 
 
 func _test_v05_ads() -> void:
-	print("\n--- 22. v0.5 AdMob: rewarded, interstitial cadence, banner ---")
+	print("\n--- 22. v0.5/v0.6 AdMob: rewarded, interstitial, app open, banner ---")
 	_assert(AdManager.REWARDED_UNIT_ID == "ca-app-pub-7279753852255468/8204090272", "Rewarded unit is DTP_Rewarded")
 	_assert(AdManager.INTERSTITIAL_UNIT_ID == "ca-app-pub-7279753852255468/6891008607", "Interstitial unit is DTP_Interstitial")
+	_assert(AdManager.APP_OPEN_UNIT_ID == "ca-app-pub-7279753852255468/6821504651", "App-open unit is DTP_AppOpen")
 	_assert(AdManager.BANNER_UNIT_ID == "ca-app-pub-7279753852255468/9599886240", "Banner unit is DTP_Banner")
 	_assert(AdManager.ADMOB_APP_ID == "ca-app-pub-7279753852255468~6806201948", "AdMob app ID is Duct Tape Protocol")
 
@@ -1019,6 +1020,13 @@ func _test_v05_ads() -> void:
 	_assert(not AdManager.interstitial_due(3, 0, true), "No interstitial mid-shift")
 	_assert(not AdManager.interstitial_due(3, 179, false), "Respects the 3-minute gap between interstitials")
 	_assert(AdManager.interstitial_due(4, 180, false), "Due again after the gap")
+
+	# App open: enabled, max once per 4 hours, never on first launch and never mid-shift.
+	_assert(AdManager.is_app_open_enabled(), "App-open ad is enabled")
+	_assert(AdManager.app_open_due(4 * 60 * 60, false, 2), "App-open due after 4 hours")
+	_assert(not AdManager.app_open_due(4 * 60 * 60 - 1, false, 2), "App-open respects the 4-hour gap")
+	_assert(not AdManager.app_open_due(4 * 60 * 60, true, 2), "No app-open ad mid-shift")
+	_assert(not AdManager.app_open_due(4 * 60 * 60, false, 1), "No app-open ad on the first launch")
 
 	# Cadence survives a relaunch (small state file, separate from the player save).
 	AdManager.state_path = "user://test_ads_state.json"

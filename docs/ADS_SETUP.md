@@ -11,9 +11,10 @@ done from inside the repository.
 | AdMob app ID | `ca-app-pub-7279753852255468~6806201948` |
 | Rewarded — `DTP_Rewarded` | `ca-app-pub-7279753852255468/8204090272` |
 | Interstitial — `DTP_Interstitial` | `ca-app-pub-7279753852255468/6891008607` |
+| App open — `DTP_AppOpen` | `ca-app-pub-7279753852255468/6821504651` |
 | Banner — `DTP_Banner` | `ca-app-pub-7279753852255468/9599886240` (code present, disabled) |
 | Plugin | Poing Studios Godot AdMob v5.0.0, vendored in `addons/admob/` |
-| Android SDK | min 24, target/compile 35, arm64-v8a only, Gradle build on |
+| Android SDK | min 24, target 36, compile 36, arm64-v8a only, Gradle build on |
 
 Where the settings live:
 
@@ -28,7 +29,7 @@ Where the settings live:
 2. Confirm the app **Duct Tape Protocol** exists with the Android package
    `com.boyoapps.ducttapeprotocol` and the app ID above. If the app is still "Not linked", link it
    to the Play listing once the first build is on a testing track.
-3. Confirm the three ad units above exist and are **Active**. Use the exact unit IDs; a typo is
+3. Confirm the four ad units above exist and are **Active**. Use the exact unit IDs; a typo is
    silent (the ad simply fails to load) and is logged as `AdManager: ... failed to load`.
 4. Complete **Payments** (name, address, tax information, payment method) and the **identity
    verification** flow. Ads serve before verification, but earnings are held.
@@ -77,25 +78,34 @@ without a lawful basis.
 | `ENABLE_BANNER` | `false` | Banner code and unit ID stay ready, but no banner is shown. Flip only after checking the menu layout. |
 | `INTERSTITIAL_EVERY_N_SHIFTS` | `3` | First interstitial after 3 finished shifts, then at most once per 3. |
 | `INTERSTITIAL_MIN_GAP_SEC` | `180` | Hard minimum between interstitials, even across relaunches. |
+| `ENABLE_APP_OPEN` | `true` | App-open ad on cold start / foreground. |
+| `APP_OPEN_MIN_GAP_SEC` | `14400` (4 h) | Hard minimum between app-open ads; any other full-screen ad resets it. |
+| `APP_OPEN_CLICK_SUPPRESS_SEC` | `300` | Do not show an app-open ad right after the player returns from an ad click. |
 | `ALLOW_DEV_SIMULATION` | `true` | Editor/desktop/Web get a 1.2 s fake ad for UI work and tests. Android/iOS never simulate. |
 | `DEBUG_EEA_CONSENT` | `false` | Force the EEA consent flow in debug builds. |
 
 Interstitials are only requested from the results screen's **NEXT**/**RETRY** handlers
 (`scenes/results/shift_results.gd`), never from gameplay, and are skipped after a rewarded ad in
-the same results screen. The cadence is stored in `user://ads_state.json`, separate from the player
+the same results screen. App-open ads are requested from `main_menu.gd` and on
+`NOTIFICATION_APPLICATION_FOCUS_IN`, but never on the first launch, during a shift or while another
+full-screen ad is open. The cadence is stored in `user://ads_state.json`, separate from the player
 save.
 
 ## 4. Android build requirements
 
 The plugin needs a **Gradle build**; the plain Android export template cannot include the AARs.
 
-1. Install **OpenJDK 17**, Android **SDK Platform 35**, **Build-Tools 35.x**, **Platform-Tools**,
+1. Install **OpenJDK 17**, Android **SDK Platform 36**, **Build-Tools 36.x**, **Platform-Tools**,
    and the **NDK/CMake** versions used by Godot 4.5 (NDK 28.1 / r28b). Point Godot's editor
    settings at the JDK and Android SDK.
 2. Install the **Godot 4.5+ Android export templates** matching the editor version.
 3. If the project previously used a Godot 4.3 build template, delete `res://android/build` and
    reinstall the Android build template from the 4.5+ editor (Project → Install Android Build
-   Template).
+   Template). Then edit `android/build/config.gradle` so `compileSdk` is **36** and `buildTools`
+   is **36.0.0** (or newer). Godot 4.5's stock template uses 35, and the AdMob AARs refuse to
+   build against anything below 36. Add
+   `android.suppressUnsupportedCompileSdk=36` to `android/build/gradle.properties` if AGP 8.6.1
+   warns about the newer compile SDK.
 4. In **Project → Export → Android**, keep **Use Gradle Build** enabled. The plugin adds:
    - `poing-godot-admob-ads-{debug,release}.aar`
    - `poing-godot-admob-core-{debug,release}.aar`
@@ -170,6 +180,9 @@ the Play listing), not in a subfolder such as `/duct-tape-protocol/`. Then verif
 
 - No ads during gameplay. Interstitials only on the results screen after the player taps
   **NEXT**/**RETRY**, and skipped after a rewarded ad.
+- App-open ads only on a cold start or foreground return, never on the first launch, never during a
+  shift and at most once every 4 hours. A click through to the advertiser suppresses the next
+  app-open ad, so returning from an ad click does not immediately show another ad.
 - Interstitials are capped at one per three finished shifts and 180 seconds, with the count
   persisted across launches.
 - Rewarded ads are opt-in, clearly labelled with the reward ("2X SCRAP"), and the reward is granted
@@ -189,8 +202,9 @@ the Play listing), not in a subfolder such as `/duct-tape-protocol/`. Then verif
 
 ## 7. 16 KB page size (Android 15+ requirement)
 
-Google Play requires new apps and updates targeting Android 15 (API 35) to support **16 KB memory
-pages**. This repository targets SDK 35, so this must be verified before the first public upload.
+Google Play requires new apps and updates targeting Android 15 (API 35) or newer to support **16 KB
+memory pages**. This repository targets SDK 36 (the Play requirement for updates from August 2026),
+so this must be verified before every upload.
 
 - Godot **4.3** ships Android templates built with NDK 23 and an older Android Gradle Plugin. These
   are **not** expected to be 16 KB-aligned. The Godot engine's `libgodot_android.so` is the likely
@@ -205,7 +219,8 @@ pages**. This repository targets SDK 35, so this must be verified before the fir
    templates**.
 2. If a custom Android build is installed under `res://android/build`, delete `android/build` and
    reinstall it from the new templates (**Project → Install Android Build Template**). Do not keep
-   a build template generated by 4.3.
+   a build template generated by 4.3. Set `compileSdk` 36 and `buildTools` 36.0.0 in
+   `android/build/config.gradle` (the AdMob AARs require compile SDK 36).
 3. Export the **AAB** with `versionCode 6` (`Android AAB` preset) and sign it with the same upload
    key used for the existing Play listing.
 4. Verify the artifact before upload:
@@ -215,9 +230,11 @@ pages**. This repository targets SDK 35, so this must be verified before the fir
    ```
 
    Every `lib/arm64-v8a/*.so` must be 16 KB-aligned. Also inspect each `PT_LOAD` segment with
-   `llvm-objdump -p` or Android Studio's APK Analyzer (alignment must be at least `0x4000`). If
-   `zipalign` does not inspect inside the AAB on your toolchain, build the test APKs with
-   `bundletool build-apks` and run the same check on them.
+   `llvm-objdump -p` or Android Studio's APK Analyzer (alignment must be at least `0x4000`).
+
+   **Verified for v0.5 / versionCode 6 (Godot 4.5-stable, NDK 28.1, targetSdk 36):**
+   `zipalign -c -P 16 -v 4` exits 0, and both `libgodot_android.so` and `libc++_shared.so` report
+   `align 2**14` (16 KB) on every `PT_LOAD` segment.
 
 - Upload the AAB to the Play Console **internal testing** track; the pre-launch report and the
   "16 KB page size" warning are the final check.
@@ -225,8 +242,7 @@ pages**. This repository targets SDK 35, so this must be verified before the fir
   16 KB linker flags (`-Wl,-z,max-page-size=16384`) plus a 16 KB-capable AGP, then re-test ads,
   touch input and audio on a 16 KB device/emulator.
 
-Do not publish the v0.5 build until this check passes. A build that targets SDK 35 but is not
-16 KB-aligned can be rejected or blocked from updates.
+A build that targets SDK 36 but is not 16 KB-aligned can be rejected or blocked from updates.
 
 ## 8. Release test plan
 
@@ -239,7 +255,10 @@ Do not publish the v0.5 build until this check passes. A build that targets SDK 
    granted once, and closing early grants nothing.
 5. Start a shift, background the app, return, and finish it; confirm no ad appears mid-shift and
    progress is intact.
-6. Install the **release** AAB through an internal testing track (or a release APK signed with the
-   upload key) and repeat steps 3–4 with live units. Never click your own live ads — use the
+6. App-open ad: the **first** launch after a fresh install must not show one. Background from the
+   menu and return: the app-open test ad may show, at most once per 4 hours, and never while a shift
+   is in progress. After dismissing it, return to the menu and confirm no second ad appears.
+7. Install the **release** AAB through an internal testing track (or a release APK signed with the
+   upload key) and repeat steps 3–6 with live units. Never click your own live ads — use the
    AdMob test-device setting or a test unit for click tests.
-7. Check logcat for `AdManager:` warnings; a healthy flow has no repeated `failed to load` lines.
+8. Check logcat for `AdManager:` warnings; a healthy flow has no repeated `failed to load` lines.

@@ -11,6 +11,7 @@ Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "
 **Ads (Google AdMob)**
 - **Rewarded ad** on the results screen: **WATCH AD: 2X SCRAP** doubles the scrap earned by that shift. The reward is granted only when Google's reward callback fires; closing early cancels it. On a real device the label is clean; in the editor/desktop/Web it says `[DEV SIM]` and runs a 1.2 s simulation.
 - **Interstitial** only at a natural break: the first one after **3 finished shifts**, then at most once per 3 shifts and never less than **3 minutes** apart. It is requested only from the results screen's **NEXT**/**RETRY** buttons, never during a shift, and is skipped after a rewarded ad. The cadence survives relaunches (`user://ads_state.json`).
+- **App open** (`DTP_AppOpen`) is shown only on a cold start or when the app returns to the foreground, never during a shift, never on the very first launch, and at most once every **4 hours**. Any other full-screen ad or an ad click also resets the gap so the player is not hit with a second ad.
 - **Banner** code and the `DTP_Banner` unit exist but are **off by default** (`ENABLE_BANNER = false`), because banners pay very little and the menu is already busy. If enabled, the menu reserves room and moves its bottom row up.
 - **EU/UK/CH consent** uses Google's User Messaging Platform (UMP) before any ad request. If consent is not obtained, ads stay off. When UMP says an entry point is required, **SETTINGS → PRIVACY OPTIONS** lets the player change their choice; **PRIVACY POLICY** opens the public policy at `https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/`.
 - **Debug builds use Google's official test unit IDs**; release builds use the real units below. The real SDK is only present in a Gradle Android build. On Android, a missing plugin means no ads and **no free reward** — the game never pretends an ad played.
@@ -20,16 +21,17 @@ Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "
 | App | `ca-app-pub-7279753852255468~6806201948` |
 | `DTP_Rewarded` | `ca-app-pub-7279753852255468/8204090272` |
 | `DTP_Interstitial` | `ca-app-pub-7279753852255468/6891008607` |
+| `DTP_AppOpen` | `ca-app-pub-7279753852255468/6821504651` |
 | `DTP_Banner` (disabled) | `ca-app-pub-7279753852255468/9599886240` |
 
-The integration lives in `scripts/ad_manager.gd`, `scenes/results/shift_results.gd` and `scenes/main_menu/main_menu.gd`; the plugin is vendored in `addons/admob/` (Poing Studios AdMob v5.0.0, Android only). App version is **0.5.0** (`version/code=6`), with Gradle build, min SDK 24, target SDK 35 and internet/network-state permissions.
+The integration lives in `scripts/ad_manager.gd`, `scenes/results/shift_results.gd` and `scenes/main_menu/main_menu.gd`; the plugin is vendored in `addons/admob/` (Poing Studios AdMob v5.0.0, Android only). App version is **0.5.0** (`version/code=6`), with Gradle build, min SDK 24, target SDK 36 and internet/network-state permissions.
 
 **Store & privacy**
 - `PRIVACY.md` is the source for the hosted privacy policy at `https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/`. It covers local save data, AdMob/Advertising ID, approximate location, diagnostics, UMP consent and the privacy-options entry point. Use the hosted URL as the Play privacy-policy URL.
 - `docs/ADS_SETUP.md` has the AdMob, UMP, Play Console ("Contains ads", Data safety), app-ads.txt and release-test checklists, plus the **16 KB page-size** caveat.
-- This build targets Android 15 (API 35), so the **16 KB page-size** requirement applies. Godot 4.3's stock templates are not expected to be 16 KB-aligned: open the project in **Godot 4.5+**, reinstall the matching Android export templates (and a fresh `android/build` if you use a custom build), export the **Android AAB** preset as versionCode 6 signed with the same upload key, then run `zipalign -c -P 16 -v 4 app.aab`. See `docs/ADS_SETUP.md` §7.
+- This build targets Android 16 (API 36), so the **16 KB page-size** requirement applies. Godot 4.3's stock templates are not 16 KB-aligned: open the project in **Godot 4.5+**, install the matching Android export templates, export the **Android AAB** preset as versionCode 6 signed with the same upload key, then run `zipalign -c -P 16 -v 4 app.aab` and check that every `PT_LOAD` segment in `lib/arm64-v8a/*.so` has `align 2**14`. The AdMob AARs need `compileSdk 36`, so the installed Gradle template's `android/build/config.gradle` must use `compileSdk 36` / `buildTools 36.0.0` (see `docs/ADS_SETUP.md` §7).
 
-186 tests (`tests/test_runner.tscn`).
+192 tests (`tests/test_runner.tscn`).
 
 ---
 
@@ -123,7 +125,7 @@ It finds Godot 4.5 (this folder, `%USERPROFILE%\.godot4\`, Desktop, Downloads, `
 & "C:\path\to\Godot_v4.5-stable_win64.exe" --path .
 ```
 
-### 2. Run Automated Tests (186 assertions)
+### 2. Run Automated Tests (192 assertions)
 ```powershell
 & "C:\Users\ssfleur\.godot4\Godot_v4.5-stable_win64_console.exe" --headless --path . res://tests/test_runner.tscn
 ```
@@ -140,4 +142,4 @@ It finds Godot 4.5 (this folder, `%USERPROFILE%\.godot4\`, Desktop, Downloads, `
 & "C:\Users\ssfleur\.godot4\Godot_v4.5-stable_win64_console.exe" --headless --path . --export-release "Android AAB" "build/android/duct-tape-protocol-release.aab"
 ```
 
-Android ads require **Use Gradle Build** (already enabled in `export_presets.cfg`), OpenJDK 17, Android SDK Platform 35, and the Android export templates. The **Android** preset exports a debug/test APK with Google's test ad units (and can also export a release APK); the **Android AAB** preset exports the Play bundle with the live `DTP_*` units. Before publishing, follow `docs/ADS_SETUP.md` for the AdMob/UMP message, Play "Contains ads" and Data safety answers, app-ads.txt, and the 16 KB page-size check.
+Android ads require **Use Gradle Build** (already enabled in `export_presets.cfg`), OpenJDK 17, Android SDK Platform 36, and the Android export templates. The **Android** preset exports a debug/test APK with Google's test ad units (and can also export a release APK); the **Android AAB** preset exports the Play bundle with the live `DTP_*` units. Before publishing, follow `docs/ADS_SETUP.md` for the AdMob/UMP message, Play "Contains ads" and Data safety answers, app-ads.txt, and the 16 KB page-size check.

@@ -23,8 +23,8 @@ The following is stored **locally on your device** and is not sent to us:
 
 - game progress: scrap balance, unlocked levels, stars, badges, daily-shift and login-streak state;
 - settings: sound, music and vibration preferences;
-- ad frequency state: the number of finished shifts and the time of the last interstitial ad, so
-  that ads are not shown too often.
+- ad frequency state: the number of finished shifts and the time of the last full-screen ad
+  (interstitial or app-open), so that ads are not shown too often.
 
 You can delete all of this by clearing the app's storage in Android settings or by uninstalling
 the game. The Web version stores similar data in your browser's local storage; clearing site data
@@ -37,6 +37,8 @@ The game uses the **Google Mobile Ads SDK (AdMob)** to show:
 - **rewarded ads** — you choose to watch one to double the scrap earned after a shift;
 - **interstitial ads** — full-screen ads only at natural breaks between shifts, at most every
   three finished shifts and never during gameplay;
+- **app-open ads** — full-screen ads when you open the app or return to it, never during a shift,
+  never on the very first launch, and at most once every four hours;
 - **banner ads** — currently disabled.
 
 Google and its advertising partners may collect and process information such as:
