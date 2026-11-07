@@ -149,9 +149,8 @@ the answers consistent with `PRIVACY.md` and Google's current AdMob Data safety 
 - **Data deletion:** the game itself stores only local save data, which is removed by clearing app
   storage or uninstalling. For advertising data, users can reset/delete the advertising ID in
   Android settings and use **PRIVACY OPTIONS** where available. If Play asks for a deletion request
-  URL, use the GitHub issues page
-  (`https://github.com/stfleurs/duct-tape-protocol/issues`) and explain the local-data behaviour
-  there.
+  URL, use `https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/` and explain the
+  local-data behaviour there.
 - Re-check the Data safety form after every SDK update; Google occasionally changes what the SDK
   collects.
 
