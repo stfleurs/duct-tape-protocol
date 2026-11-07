@@ -106,13 +106,15 @@ func _build_ui() -> void:
 	add_child(retry_btn)
 
 	# Rewarded Ad Button (matching Concept Image 5 green pill button, clearly marked as DEV SIM per Section 9)
-	_ad_btn = Button.new()
-	_ad_btn.text = "▶ WATCH AD: 2X SCRAP [DEV SIM]"
-	_ad_btn.position = Vector2(110, 1138)
-	_ad_btn.custom_minimum_size = Vector2(500, 82)
-	DuctTapeUI.style_pill_button(_ad_btn, DuctTapeUI.COLOR_GREEN_TOP, DuctTapeUI.COLOR_GREEN_BOT, 25, 40)
-	_ad_btn.pressed.connect(_on_watch_ad_pressed)
-	add_child(_ad_btn)
+	# Release builds have no ad SDK yet (Play v0.4.0 ships with no ads), so the simulated ad button only exists in debug builds.
+	if OS.is_debug_build():
+		_ad_btn = Button.new()
+		_ad_btn.text = "▶ WATCH AD: 2X SCRAP [DEV SIM]"
+		_ad_btn.position = Vector2(110, 1138)
+		_ad_btn.custom_minimum_size = Vector2(500, 82)
+		DuctTapeUI.style_pill_button(_ad_btn, DuctTapeUI.COLOR_GREEN_TOP, DuctTapeUI.COLOR_GREEN_BOT, 25, 40)
+		_ad_btn.pressed.connect(_on_watch_ad_pressed)
+		add_child(_ad_btn)
 
 	# v0.4: BADGES button + toasts for badges earned at the end of the shift
 	var badges_btn := Button.new()
