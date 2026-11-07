@@ -119,7 +119,7 @@ release notes.
 
 Questions or requests about this policy or your data:
 
-- Open an issue: <https://github.com/stfleurs/duct-tape-protocol/issues>
-- Source repository: <https://github.com/stfleurs/duct-tape-protocol>
+- Hosted policy: <https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/>
+- Developer site: <https://boyoapps-pages.pages.dev/>
 
 Please include the app version and your Android version so we can help faster.

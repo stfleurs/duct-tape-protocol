@@ -12,7 +12,7 @@ var _streak_pop: float = 0.0
 var _privacy_btn: Button
 var _privacy_policy_btn: Button
 
-const PRIVACY_URL: String = "https://github.com/stfleurs/duct-tape-protocol/blob/main/PRIVACY.md"
+const PRIVACY_URL: String = "https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/"
 
 var _bleed_off: Vector2 = Vector2.ZERO
 

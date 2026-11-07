@@ -1,6 +1,6 @@
 # Duct Tape Protocol
 
-A humorous 2D sci-fi repair and survival game built with **Godot 4.3 (GDScript)** for **Android** and **Web**.
+A humorous 2D sci-fi repair and survival game built with **Godot 4.5+ (GDScript)** for **Android** and **Web**.
 
 Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "indestructible" alien warship from falling apart using silver duct tape, a heavy wrench, and quick thinking while **PRISTINE** (the ship's arrogant holographic AI) complains about every repair.
 
@@ -12,7 +12,7 @@ Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "
 - **Rewarded ad** on the results screen: **WATCH AD: 2X SCRAP** doubles the scrap earned by that shift. The reward is granted only when Google's reward callback fires; closing early cancels it. On a real device the label is clean; in the editor/desktop/Web it says `[DEV SIM]` and runs a 1.2 s simulation.
 - **Interstitial** only at a natural break: the first one after **3 finished shifts**, then at most once per 3 shifts and never less than **3 minutes** apart. It is requested only from the results screen's **NEXT**/**RETRY** buttons, never during a shift, and is skipped after a rewarded ad. The cadence survives relaunches (`user://ads_state.json`).
 - **Banner** code and the `DTP_Banner` unit exist but are **off by default** (`ENABLE_BANNER = false`), because banners pay very little and the menu is already busy. If enabled, the menu reserves room and moves its bottom row up.
-- **EU/UK/CH consent** uses Google's User Messaging Platform (UMP) before any ad request. If consent is not obtained, ads stay off. When UMP says an entry point is required, **SETTINGS → PRIVACY OPTIONS** lets the player change their choice; **PRIVACY POLICY** opens `PRIVACY.md`.
+- **EU/UK/CH consent** uses Google's User Messaging Platform (UMP) before any ad request. If consent is not obtained, ads stay off. When UMP says an entry point is required, **SETTINGS → PRIVACY OPTIONS** lets the player change their choice; **PRIVACY POLICY** opens the public policy at `https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/`.
 - **Debug builds use Google's official test unit IDs**; release builds use the real units below. The real SDK is only present in a Gradle Android build. On Android, a missing plugin means no ads and **no free reward** — the game never pretends an ad played.
 
 | Unit | ID |
@@ -25,9 +25,9 @@ Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "
 The integration lives in `scripts/ad_manager.gd`, `scenes/results/shift_results.gd` and `scenes/main_menu/main_menu.gd`; the plugin is vendored in `addons/admob/` (Poing Studios AdMob v5.0.0, Android only). App version is **0.5.0** (`version/code=6`), with Gradle build, min SDK 24, target SDK 35 and internet/network-state permissions.
 
 **Store & privacy**
-- `PRIVACY.md` covers local save data, AdMob/Advertising ID, approximate location, diagnostics, UMP consent and the privacy-options entry point. Use it as the Play privacy-policy URL.
+- `PRIVACY.md` is the source for the hosted privacy policy at `https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/`. It covers local save data, AdMob/Advertising ID, approximate location, diagnostics, UMP consent and the privacy-options entry point. Use the hosted URL as the Play privacy-policy URL.
 - `docs/ADS_SETUP.md` has the AdMob, UMP, Play Console ("Contains ads", Data safety), app-ads.txt and release-test checklists, plus the **16 KB page-size** caveat.
-- This build targets Android 15 (API 35), so the **16 KB page-size** requirement applies. Godot 4.3's stock templates are not expected to be 16 KB-aligned; verify or build with a 16 KB-capable Godot before publishing. See `docs/ADS_SETUP.md` §7.
+- This build targets Android 15 (API 35), so the **16 KB page-size** requirement applies. Godot 4.3's stock templates are not expected to be 16 KB-aligned: open the project in **Godot 4.5+**, reinstall the matching Android export templates (and a fresh `android/build` if you use a custom build), export the **Android AAB** preset as versionCode 6 signed with the same upload key, then run `zipalign -c -P 16 -v 4 app.aab`. See `docs/ADS_SETUP.md` §7.
 
 186 tests (`tests/test_runner.tscn`).
 
@@ -111,33 +111,33 @@ Screenshots are rendered by `tests/screenshot_runner.tscn` (needs a window: `god
 
 ## Running, Testing & Exporting
 
-### 1. Run in Godot 4.3
+### 1. Run in Godot 4.5+
 Double-click **`Launch Game.bat`** (or **`Launch Game (console).bat`** to keep a window open with any errors).
-It finds Godot 4.3 (this folder, `%USERPROFILE%\.godot4\`, Desktop, Downloads, `C:\Godot\`, or `godot` on PATH; or set `GODOT_EXE`), and on a fresh clone it imports the project once first.
+It finds Godot 4.5 (this folder, `%USERPROFILE%\.godot4\`, Desktop, Downloads, `C:\Godot\`, or `godot` on PATH; or set `GODOT_EXE`), and on a fresh clone it imports the project once first.
 
 > **Fresh clone / zip:** `.godot/` is not in git, so the project must be imported once before the game can run
 > (otherwise custom classes such as `LevelData` are "not found" and the autoloads fail). Either open it once in the
-> Godot 4.3 editor, or run:
+> Godot 4.5 editor, or run:
 ```powershell
-& "C:\path\to\Godot_v4.3-stable_win64_console.exe" --headless --path . --import
-& "C:\path\to\Godot_v4.3-stable_win64.exe" --path .
+& "C:\path\to\Godot_v4.5-stable_win64_console.exe" --headless --path . --import
+& "C:\path\to\Godot_v4.5-stable_win64.exe" --path .
 ```
 
 ### 2. Run Automated Tests (186 assertions)
 ```powershell
-& "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . res://tests/test_runner.tscn
+& "C:\Users\ssfleur\.godot4\Godot_v4.5-stable_win64_console.exe" --headless --path . res://tests/test_runner.tscn
 ```
 
 ### 3. Build Web & Android Exports
 ```powershell
 # Web (HTML5)
-& "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . --export-release "Web" "build/web/index.html"
+& "C:\Users\ssfleur\.godot4\Godot_v4.5-stable_win64_console.exe" --headless --path . --export-release "Web" "build/web/index.html"
 
 # Android Debug APK (Gradle build, Google test ad units)
-& "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . --export-debug "Android" "build/android/duct-tape-protocol-debug.apk"
+& "C:\Users\ssfleur\.godot4\Godot_v4.5-stable_win64_console.exe" --headless --path . --export-debug "Android" "build/android/duct-tape-protocol-debug.apk"
 
 # Android Release AAB for Play (live ad units; needs a release keystore)
-& "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . --export-release "Android AAB" "build/android/duct-tape-protocol-release.aab"
+& "C:\Users\ssfleur\.godot4\Godot_v4.5-stable_win64_console.exe" --headless --path . --export-release "Android AAB" "build/android/duct-tape-protocol-release.aab"
 ```
 
 Android ads require **Use Gradle Build** (already enabled in `export_presets.cfg`), OpenJDK 17, Android SDK Platform 35, and the Android export templates. The **Android** preset exports a debug/test APK with Google's test ad units (and can also export a release APK); the **Android AAB** preset exports the Play bundle with the live `DTP_*` units. Before publishing, follow `docs/ADS_SETUP.md` for the AdMob/UMP message, Play "Contains ads" and Data safety answers, app-ads.txt, and the 16 KB page-size check.

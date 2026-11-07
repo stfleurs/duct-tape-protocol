@@ -44,9 +44,8 @@ AdMob:
 
 1. Open **Privacy & messaging** in AdMob.
 2. Create a **GDPR message** for the Android app.
-3. Select the EEA, UK and Switzerland. Add the privacy policy URL
-   (`https://github.com/stfleurs/duct-tape-protocol/blob/main/PRIVACY.md` or a nicer hosted page —
-   see section 5).
+3. Select the EEA, UK and Switzerland. Add the hosted privacy policy URL
+   (`https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/`).
 4. Keep the standard Google consent options (consent, do not consent, manage options) and review
    the **ad technology providers** list. If you remove providers, verify that the ads you receive
    are still allowed.
@@ -91,19 +90,23 @@ save.
 The plugin needs a **Gradle build**; the plain Android export template cannot include the AARs.
 
 1. Install **OpenJDK 17**, Android **SDK Platform 35**, **Build-Tools 35.x**, **Platform-Tools**,
-   and the **NDK/CMake** versions required by Godot 4.3 (NDK 23.2.8568313). Point Godot's editor
+   and the **NDK/CMake** versions used by Godot 4.5 (NDK 28.1 / r28b). Point Godot's editor
    settings at the JDK and Android SDK.
-2. Install the Godot **4.3 Android export templates**.
-3. In **Project → Export → Android**, keep **Use Gradle Build** enabled. The plugin adds:
+2. Install the **Godot 4.5+ Android export templates** matching the editor version.
+3. If the project previously used a Godot 4.3 build template, delete `res://android/build` and
+   reinstall the Android build template from the 4.5+ editor (Project → Install Android Build
+   Template).
+4. In **Project → Export → Android**, keep **Use Gradle Build** enabled. The plugin adds:
    - `poing-godot-admob-ads-{debug,release}.aar`
    - `poing-godot-admob-core-{debug,release}.aar`
    - `com.google.android.libraries.ads.mobile.sdk:ads-mobile-sdk:1.2.1`
    - `androidx.constraintlayout:constraintlayout:2.2.0`
    - the `com.google.android.gms.ads.APPLICATION_ID` manifest entry, using the `[admob]` app ID.
-4. Internet and network-state permissions are already enabled in `export_presets.cfg`. The AdMob
+5. Internet and network-state permissions are already enabled in `export_presets.cfg`. The AdMob
    AAR also declares `android.permission.AD_ID`; keep it unless you intentionally ship a
    non-advertising build.
-5. Export an **AAB** for Play (release, signed) and a **debug APK** for device testing.
+6. Export the **Android AAB** preset for Play (release, signed) and the **Android** preset for the
+   debug/test APK.
 
 Example commands (adjust the Godot path):
 
@@ -112,7 +115,7 @@ Example commands (adjust the Godot path):
 godot --headless --path . --export-debug "Android" "build/android/duct-tape-protocol-debug.apk"
 
 # Release AAB: uses the live unit IDs
-godot --headless --path . --export-release "Android" "build/android/duct-tape-protocol-release.aab"
+godot --headless --path . --export-release "Android AAB" "build/android/duct-tape-protocol-release.aab"
 ```
 
 ## 5. Play Console
@@ -121,9 +124,10 @@ godot --headless --path . --export-release "Android" "build/android/duct-tape-pr
 
 - **Contains ads:** **Yes**. This must match the AdMob integration. A "No" answer is a policy
   violation.
-- **Privacy policy:** publish `PRIVACY.md` at a public URL and paste it into the listing. The
-  repository URL works, but a GitHub Pages site or a small static page is more readable and lets
-  you host `app-ads.txt` at the domain root.
+- **Privacy policy:** use the public hosted policy at
+  `https://boyoapps-pages.pages.dev/duct-tape-protocol/privacy/` and paste it into the listing.
+  Keep `PRIVACY.md` in the repository as the source. The same site can host `app-ads.txt` at the
+  domain root (`https://boyoapps-pages.pages.dev/app-ads.txt`).
 - **App category / content rating:** complete the IARC questionnaire and declare that the app
   contains ads. Keep the AdMob maximum content rating consistent with the IARC result.
 - **Target audience:** not primarily child-directed; do not opt into Families if the game is not
@@ -159,10 +163,9 @@ AdMob expects this line on the developer website you list in Play:
 google.com, pub-7279753852255468, DIRECT, f08c47fec0942fa0
 ```
 
-Host it at `https://<your-domain>/app-ads.txt` (the **root** of the domain entered in the Play
-listing), not in a subfolder. `github.com/stfleurs/...` cannot host a root `app-ads.txt`; use
-GitHub Pages (for example a `stfleurs.github.io` user site) or another domain. Then verify it in
-AdMob **App settings → app-ads.txt**.
+Host it at `https://boyoapps-pages.pages.dev/app-ads.txt` (the **root** of the domain entered in
+the Play listing), not in a subfolder such as `/duct-tape-protocol/`. Then verify it in AdMob
+**App settings → app-ads.txt**.
 
 ## 6. AdMob policy checklist
 
@@ -194,16 +197,33 @@ pages**. This repository targets SDK 35, so this must be verified before the fir
   are **not** expected to be 16 KB-aligned. The Godot engine's `libgodot_android.so` is the likely
   blocker, not the AdMob SDK (the GMA Next-Gen SDK is Java/Kotlin and does not add native
   libraries).
-- The reliable fix is to build with Godot **4.5+**, which added 16 KB page-size support and moved to
-  NDK 28.1 / AGP 8.6.1 (godotengine/godot#106358). Alternatively, compile custom 4.3 templates
-  with NDK r27+ and 16 KB linker flags (`-Wl,-z,max-page-size=16384`) plus a 16 KB-capable AGP.
-- Verify the exported artifact, not just the source:
-  - `zipalign -c -P 16 -v 4 app.apk` must pass.
-  - Inspect every `lib/arm64-v8a/*.so` in the APK/AAB: each PT_LOAD segment must have an alignment
-    of at least `0x4000` (use `llvm-objdump -p` or Android Studio's APK Analyzer).
-  - Upload to the Play Console **internal testing** track; the pre-launch report and the
-    "16 KB page size" warning are the final check.
-- If a Godot 4.3 template is mandatory, budget time for a custom template build and re-test ads,
+- Godot **4.5+** added 16 KB page-size support and moved to NDK 28.1 / AGP 8.6.1
+  (godotengine/godot#106358). This is the recommended path.
+
+**Recommended fix (4.5+):**
+
+1. Open the project in **Godot 4.5 or newer** and install the matching **Android export
+   templates**.
+2. If a custom Android build is installed under `res://android/build`, delete `android/build` and
+   reinstall it from the new templates (**Project → Install Android Build Template**). Do not keep
+   a build template generated by 4.3.
+3. Export the **AAB** with `versionCode 6` (`Android AAB` preset) and sign it with the same upload
+   key used for the existing Play listing.
+4. Verify the artifact before upload:
+
+   ```bash
+   zipalign -c -P 16 -v 4 app.aab
+   ```
+
+   Every `lib/arm64-v8a/*.so` must be 16 KB-aligned. Also inspect each `PT_LOAD` segment with
+   `llvm-objdump -p` or Android Studio's APK Analyzer (alignment must be at least `0x4000`). If
+   `zipalign` does not inspect inside the AAB on your toolchain, build the test APKs with
+   `bundletool build-apks` and run the same check on them.
+
+- Upload the AAB to the Play Console **internal testing** track; the pre-launch report and the
+  "16 KB page size" warning are the final check.
+- If a Godot 4.3 template is mandatory, budget time for a custom template build with NDK r27+ and
+  16 KB linker flags (`-Wl,-z,max-page-size=16384`) plus a 16 KB-capable AGP, then re-test ads,
   touch input and audio on a 16 KB device/emulator.
 
 Do not publish the v0.5 build until this check passes. A build that targets SDK 35 but is not
