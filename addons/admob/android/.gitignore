@@ -1,0 +1,2 @@
+# Android binaries are vendored intentionally (see docs/ADS_SETUP.md).
+# Do not ignore /bin: the AARs and package.gd must ship with the repository.

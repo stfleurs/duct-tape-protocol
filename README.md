@@ -6,6 +6,33 @@ Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "
 
 ---
 
+## v0.5 — Ads, consent, and store readiness
+
+**Ads (Google AdMob)**
+- **Rewarded ad** on the results screen: **WATCH AD: 2X SCRAP** doubles the scrap earned by that shift. The reward is granted only when Google's reward callback fires; closing early cancels it. On a real device the label is clean; in the editor/desktop/Web it says `[DEV SIM]` and runs a 1.2 s simulation.
+- **Interstitial** only at a natural break: the first one after **3 finished shifts**, then at most once per 3 shifts and never less than **3 minutes** apart. It is requested only from the results screen's **NEXT**/**RETRY** buttons, never during a shift, and is skipped after a rewarded ad. The cadence survives relaunches (`user://ads_state.json`).
+- **Banner** code and the `DTP_Banner` unit exist but are **off by default** (`ENABLE_BANNER = false`), because banners pay very little and the menu is already busy. If enabled, the menu reserves room and moves its bottom row up.
+- **EU/UK/CH consent** uses Google's User Messaging Platform (UMP) before any ad request. If consent is not obtained, ads stay off. When UMP says an entry point is required, **SETTINGS → PRIVACY OPTIONS** lets the player change their choice; **PRIVACY POLICY** opens `PRIVACY.md`.
+- **Debug builds use Google's official test unit IDs**; release builds use the real units below. The real SDK is only present in a Gradle Android build. On Android, a missing plugin means no ads and **no free reward** — the game never pretends an ad played.
+
+| Unit | ID |
+|---|---|
+| App | `ca-app-pub-7279753852255468~6806201948` |
+| `DTP_Rewarded` | `ca-app-pub-7279753852255468/8204090272` |
+| `DTP_Interstitial` | `ca-app-pub-7279753852255468/6891008607` |
+| `DTP_Banner` (disabled) | `ca-app-pub-7279753852255468/9599886240` |
+
+The integration lives in `scripts/ad_manager.gd`, `scenes/results/shift_results.gd` and `scenes/main_menu/main_menu.gd`; the plugin is vendored in `addons/admob/` (Poing Studios AdMob v5.0.0, Android only). App version is **0.5.0** (`version/code=6`), with Gradle build, min SDK 24, target SDK 35 and internet/network-state permissions.
+
+**Store & privacy**
+- `PRIVACY.md` covers local save data, AdMob/Advertising ID, approximate location, diagnostics, UMP consent and the privacy-options entry point. Use it as the Play privacy-policy URL.
+- `docs/ADS_SETUP.md` has the AdMob, UMP, Play Console ("Contains ads", Data safety), app-ads.txt and release-test checklists, plus the **16 KB page-size** caveat.
+- This build targets Android 15 (API 35), so the **16 KB page-size** requirement applies. Godot 4.3's stock templates are not expected to be 16 KB-aligned; verify or build with a 16 KB-capable Godot before publishing. See `docs/ADS_SETUP.md` §7.
+
+186 tests (`tests/test_runner.tscn`).
+
+---
+
 ## v0.4 — Reasons to come back, and rooms you can tell apart
 
 **Rewards**
@@ -20,7 +47,7 @@ Play as **Chief Nadine Baptiste** aboard the *Flawless Ascendancy*, keeping an "
 - **No tool bar** (tools are picked automatically). **Problems spread out** over the wall and the floor band in front of Nadine, a bit bigger and easier to tap. **No idle gaps**: when nothing is broken the next problem comes within about a second. **PRISTINE** has 40+ extra lines (`scripts/quips.gd`) and never says the same line twice in a row. The repair meter never covers Nadine's head.
 - **Short first shift**: 3 rooms with 2 / 2 / 3 problems and one short dash (about a minute).
 
-Saves from v0.3 load fine (new fields get defaults). 167 tests (`tests/test_runner.tscn`). Screenshots: `tests/screenshot_runner.tscn`.
+Saves from v0.3 load fine (new fields get defaults). 167 tests at v0.4 (`tests/test_runner.tscn`). Screenshots: `tests/screenshot_runner.tscn`.
 
 ---
 
@@ -78,7 +105,7 @@ Screenshots are rendered by `tests/screenshot_runner.tscn` (needs a window: `god
   - **Painted art is optional**: drop PNGs into `assets/art/` with these names and they are used automatically (missing files fall back to shape drawing): `engine_room_bg`, `nadine_idle`, `nadine_run_1..3`, `nadine_tape`, `nadine_wrench`, `nadine_cheer`, `pipe_cracked`, `pipe_segment`, `relay_panel`, `relay_panel_sparking`, `valve`, `valve_hot`, `tape_patch`, `steam_puff`, `closeup_bg`, `closeup_pipe`, `closeup_tape_wrap_1..3`, `closeup_leak_drops`, `closeup_hands_tape`. Room spots, doors and floor lines are in `scripts/ship_rooms.gd`.
   - OS Pause & Interruption Handling (`NOTIFICATION_APPLICATION_PAUSED`, `NOTIFICATION_APPLICATION_FOCUS_OUT`, Android back gesture).
 - **Shift Complete / Failed Screen** (`scenes/results/shift_results.tscn`):
-  - Displays 1–3 star rating, score, scrap earned (`+120 SCRAP` for 3-star completion), Nadine & PRISTINE reactions, `NEXT`, `RETRY`, and a clearly labeled `[DEV SIM]` 2x Scrap rewarded-ad simulation button.
+  - Displays 1–3 star rating, score, scrap earned (`+120 SCRAP` for 3-star completion), Nadine & PRISTINE reactions, `NEXT`, `RETRY`, and the rewarded-ad button (2x Scrap).
 
 ---
 
@@ -96,7 +123,7 @@ It finds Godot 4.3 (this folder, `%USERPROFILE%\.godot4\`, Desktop, Downloads, `
 & "C:\path\to\Godot_v4.3-stable_win64.exe" --path .
 ```
 
-### 2. Run Automated Tests (167 assertions)
+### 2. Run Automated Tests (186 assertions)
 ```powershell
 & "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . res://tests/test_runner.tscn
 ```
@@ -106,6 +133,11 @@ It finds Godot 4.3 (this folder, `%USERPROFILE%\.godot4\`, Desktop, Downloads, `
 # Web (HTML5)
 & "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . --export-release "Web" "build/web/index.html"
 
-# Android Debug APK
+# Android Debug APK (Gradle build, Google test ad units)
 & "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . --export-debug "Android" "build/android/duct-tape-protocol-debug.apk"
+
+# Android Release AAB for Play (live ad units; needs a release keystore)
+& "C:\Users\ssfleur\.godot4\Godot_v4.3-stable_win64_console.exe" --headless --path . --export-release "Android AAB" "build/android/duct-tape-protocol-release.aab"
 ```
+
+Android ads require **Use Gradle Build** (already enabled in `export_presets.cfg`), OpenJDK 17, Android SDK Platform 35, and the Android export templates. The **Android** preset exports a debug/test APK with Google's test ad units (and can also export a release APK); the **Android AAB** preset exports the Play bundle with the live `DTP_*` units. Before publishing, follow `docs/ADS_SETUP.md` for the AdMob/UMP message, Play "Contains ads" and Data safety answers, app-ads.txt, and the 16 KB page-size check.

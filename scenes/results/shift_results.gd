@@ -30,6 +30,8 @@ func _ready() -> void:
 			"room_id": "engine_room",
 			"room_name": "ENGINE ROOM"
 		}
+	# One finished shift. The next natural break (NEXT/RETRY) may show an interstitial.
+	AdManager.note_shift_finished()
 	_build_ui()
 
 func _build_ui() -> void:
@@ -87,10 +89,12 @@ func _build_ui() -> void:
 	DuctTapeUI.style_pill_button(next_btn, DuctTapeUI.COLOR_ORANGE_TOP, DuctTapeUI.COLOR_ORANGE_BOT, 42, 46)
 	next_btn.pressed.connect(func() -> void:
 		AudioManager.play_sfx("button")
-		if bool(_results.get("daily", false)):
-			GameManager.go_to_main_menu()
-		else:
-			GameManager.go_to_ship_map()
+		_leave_results(func() -> void:
+			if bool(_results.get("daily", false)):
+				GameManager.go_to_main_menu()
+			else:
+				GameManager.go_to_ship_map()
+		)
 	)
 	add_child(next_btn)
 
@@ -101,18 +105,25 @@ func _build_ui() -> void:
 	DuctTapeUI.style_pill_button(retry_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 42, 46)
 	retry_btn.pressed.connect(func() -> void:
 		AudioManager.play_sfx("button")
-		GameManager.start_shift(String(_results.get("room_id", "engine_room")), bool(_results.get("daily", false)))
+		_leave_results(func() -> void:
+			GameManager.start_shift(
+				String(_results.get("room_id", "engine_room")),
+				bool(_results.get("daily", false))
+			)
+		)
 	)
 	add_child(retry_btn)
 
-	# Rewarded Ad Button (matching Concept Image 5 green pill button, clearly marked as DEV SIM per Section 9)
+	# Rewarded ad: 2x the scrap from this shift. Label says [DEV SIM] only outside Android.
 	_ad_btn = Button.new()
-	_ad_btn.text = "▶ WATCH AD: 2X SCRAP [DEV SIM]"
+	_ad_btn.text = AdManager.rewarded_button_text("▶ WATCH AD: 2X SCRAP")
 	_ad_btn.position = Vector2(110, 1138)
 	_ad_btn.custom_minimum_size = Vector2(500, 82)
 	DuctTapeUI.style_pill_button(_ad_btn, DuctTapeUI.COLOR_GREEN_TOP, DuctTapeUI.COLOR_GREEN_BOT, 25, 40)
 	_ad_btn.pressed.connect(_on_watch_ad_pressed)
 	add_child(_ad_btn)
+	AdManager.ads_ready_changed.connect(_on_ads_ready_changed)
+	_on_ads_ready_changed(AdManager.is_ads_ready())
 
 	# v0.4: BADGES button + toasts for badges earned at the end of the shift
 	var badges_btn := Button.new()
@@ -148,17 +159,42 @@ func _on_watch_ad_pressed() -> void:
 		return
 	AudioManager.play_sfx("button")
 	_ad_btn.disabled = true
-	_ad_btn.text = "SIMULATING DEV AD..."
+	_ad_btn.text = "LOADING AD..."
+	AdManager.request_rewarded_ad("results_double_scrap", _on_ad_reward, _on_ad_cancelled)
 
+func _on_ad_reward() -> void:
+	_ad_claimed = true
 	var base_scrap: int = int(_results.get("scrap_earned", 120))
-	AdManager.request_rewarded_ad("results_double_scrap", func() -> void:
-		_ad_claimed = true
-		CurrencyManager.add_scrap(base_scrap)
-		var doubled: int = base_scrap * 2
-		_scrap_label.text = "+%d SCRAP" % doubled
-		_ad_btn.text = "✓ 2X SCRAP CLAIMED (DEV SIM)"
-		AudioManager.play_sfx("repair_success")
+	CurrencyManager.add_scrap(base_scrap)
+	var doubled: int = base_scrap * 2
+	_scrap_label.text = "+%d SCRAP" % doubled
+	_ad_btn.text = AdManager.rewarded_button_text("✓ 2X SCRAP CLAIMED")
+	AudioManager.play_sfx("repair_success")
+
+func _on_ad_cancelled() -> void:
+	if _ad_claimed or not is_instance_valid(_ad_btn):
+		return
+	_ad_btn.disabled = false
+	_ad_btn.text = AdManager.rewarded_button_text("▶ WATCH AD: 2X SCRAP")
+
+func _on_ads_ready_changed(ready: bool) -> void:
+	if _ad_claimed or not is_instance_valid(_ad_btn):
+		return
+	_ad_btn.disabled = not ready
+	_ad_btn.text = AdManager.rewarded_button_text(
+		"▶ WATCH AD: 2X SCRAP" if ready else "AD LOADING..."
 	)
+
+## Interstitials only run on these natural breaks, and never right after a rewarded ad.
+func _leave_results(go: Callable) -> void:
+	if _ad_claimed:
+		go.call_deferred()
+	else:
+		AdManager.show_interstitial_then(go)
+
+func _exit_tree() -> void:
+	if AdManager.ads_ready_changed.is_connected(_on_ads_ready_changed):
+		AdManager.ads_ready_changed.disconnect(_on_ads_ready_changed)
 
 func _draw() -> void:
 	var survived: bool = bool(_results.get("survived", true))

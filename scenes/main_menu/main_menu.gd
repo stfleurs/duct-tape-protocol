@@ -9,6 +9,10 @@ var _toast: BadgeToast
 var _streak: int = 0
 var _streak_bonus: int = 0
 var _streak_pop: float = 0.0
+var _privacy_btn: Button
+var _privacy_policy_btn: Button
+
+const PRIVACY_URL: String = "https://github.com/stfleurs/duct-tape-protocol/blob/main/PRIVACY.md"
 
 var _bleed_off: Vector2 = Vector2.ZERO
 
@@ -20,8 +24,13 @@ func _ready() -> void:
 		queue_redraw()
 	)
 	_build_ui()
+	# No-op unless ENABLE_BANNER is on (the menu reserves room for it below).
+	AdManager.show_banner()
 
 func _build_ui() -> void:
+	# Reserve a strip above the bottom edge when the optional menu banner is enabled.
+	var bottom_offset: float = -104.0 if AdManager.is_banner_enabled() else 0.0
+
 	# Nadine Baptiste in her hero pose (holding silver tape roll + wrench, matching Concept Image 1)
 	_nadine = NadineCharacter.new()
 	_nadine.position = Vector2(245, 628)
@@ -52,7 +61,7 @@ func _build_ui() -> void:
 	var daily_btn := Button.new()
 	var done_today: bool = RewardManager.is_daily_done()
 	daily_btn.text = "DAILY SHIFT\n%s" % ("DONE TODAY - REPLAY" if done_today else "+%d BONUS SCRAP" % Achievements.DAILY_BONUS_SCRAP)
-	daily_btn.position = Vector2(56, 974)
+	daily_btn.position = Vector2(56, 974 + bottom_offset)
 	daily_btn.custom_minimum_size = Vector2(296, 96)
 	DuctTapeUI.style_pill_button(daily_btn, DuctTapeUI.COLOR_GREEN_TOP, DuctTapeUI.COLOR_GREEN_BOT, 26, 40)
 	daily_btn.pressed.connect(func() -> void:
@@ -64,7 +73,7 @@ func _build_ui() -> void:
 
 	var badges_btn := Button.new()
 	badges_btn.text = "BADGES  %d/%d" % [RewardManager.unlocked_count(), Achievements.count()]
-	badges_btn.position = Vector2(368, 974)
+	badges_btn.position = Vector2(368, 974 + bottom_offset)
 	badges_btn.custom_minimum_size = Vector2(296, 96)
 	DuctTapeUI.style_pill_button(badges_btn, Color(0.98, 0.80, 0.26), Color(0.82, 0.52, 0.08), 30, 40)
 	badges_btn.pressed.connect(func() -> void:
@@ -77,7 +86,7 @@ func _build_ui() -> void:
 	# LEVELS button (Purple pill, matching Concept Image 1)
 	var levels_btn := Button.new()
 	levels_btn.text = "LEVELS"
-	levels_btn.position = Vector2(56, 1088)
+	levels_btn.position = Vector2(56, 1088 + bottom_offset)
 	levels_btn.custom_minimum_size = Vector2(296, 90)
 	DuctTapeUI.style_pill_button(levels_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 38, 44)
 	levels_btn.pressed.connect(func() -> void:
@@ -89,11 +98,12 @@ func _build_ui() -> void:
 	# SETTINGS button (Purple pill, matching Concept Image 1)
 	var settings_btn := Button.new()
 	settings_btn.text = "SETTINGS"
-	settings_btn.position = Vector2(368, 1088)
+	settings_btn.position = Vector2(368, 1088 + bottom_offset)
 	settings_btn.custom_minimum_size = Vector2(296, 90)
 	DuctTapeUI.style_pill_button(settings_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 38, 44)
 	settings_btn.pressed.connect(func() -> void:
 		AudioManager.play_sfx("button")
+		_refresh_privacy_ui()
 		_settings_modal.visible = true
 	)
 	add_child(settings_btn)
@@ -119,8 +129,15 @@ func _build_ui() -> void:
 	add_child(_toast)
 
 func _exit_tree() -> void:
+	AdManager.hide_banner()
 	if RewardManager.achievement_unlocked.is_connected(_on_badge):
 		RewardManager.achievement_unlocked.disconnect(_on_badge)
+
+func _refresh_privacy_ui() -> void:
+	if is_instance_valid(_privacy_btn):
+		_privacy_btn.visible = AdManager.has_privacy_options()
+	if is_instance_valid(_privacy_policy_btn):
+		_privacy_policy_btn.visible = PRIVACY_URL != ""
 
 func _on_badge(def: Dictionary) -> void:
 	if _toast != null:
@@ -145,8 +162,8 @@ func _build_settings_modal() -> void:
 	_settings_modal.add_child(dim)
 
 	var card := PanelContainer.new()
-	card.position = Vector2(80, 320)
-	card.custom_minimum_size = Vector2(560, 520)
+	card.position = Vector2(80, 300)
+	card.custom_minimum_size = Vector2(560, 600)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.24, 0.15, 0.44)
 	style.border_color = DuctTapeUI.COLOR_GOLD
@@ -188,6 +205,31 @@ func _build_settings_modal() -> void:
 			AudioManager.play_sfx("button")
 		)
 		vbox.add_child(toggle_btn)
+
+	# GDPR/CCPA: only shown when Google says a privacy options entry point is required.
+	_privacy_btn = Button.new()
+	_privacy_btn.text = "PRIVACY OPTIONS"
+	_privacy_btn.custom_minimum_size = Vector2(420, 70)
+	DuctTapeUI.style_pill_button(_privacy_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 26, 34)
+	_privacy_btn.pressed.connect(func() -> void:
+		AudioManager.play_sfx("button")
+		AdManager.show_privacy_options()
+	)
+	_privacy_btn.visible = false
+	vbox.add_child(_privacy_btn)
+
+	_privacy_policy_btn = Button.new()
+	_privacy_policy_btn.text = "PRIVACY POLICY"
+	_privacy_policy_btn.custom_minimum_size = Vector2(420, 70)
+	DuctTapeUI.style_pill_button(
+		_privacy_policy_btn, DuctTapeUI.COLOR_PURPLE_LIGHT, DuctTapeUI.COLOR_PURPLE_MID, 26, 34
+	)
+	_privacy_policy_btn.pressed.connect(func() -> void:
+		AudioManager.play_sfx("button")
+		OS.shell_open(PRIVACY_URL)
+	)
+	vbox.add_child(_privacy_policy_btn)
+	_refresh_privacy_ui()
 
 	var close_btn := Button.new()
 	close_btn.text = "DONE"

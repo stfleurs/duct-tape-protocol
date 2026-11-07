@@ -1,0 +1,3 @@
+# iOS binaries are not used (Android-only game), but the stub package.gd is vendored
+# so the plugin never tries to download iOS binaries during import.
+# Do not ignore /bin.

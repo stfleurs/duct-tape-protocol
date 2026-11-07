@@ -26,6 +26,7 @@ func _ready() -> void:
 	_test_v04_daily_and_streak()
 	_test_v04_combo()
 	_test_v04_clarity()
+	_test_v05_ads()
 
 	print("===============================================")
 	print("Tests Passed: %d | Tests Failed: %d" % [_passed, _failed])
@@ -1003,3 +1004,64 @@ func _test_v04_clarity() -> void:
 	_assert(dg.level_manager.is_daily and JSON.stringify(dg.plan) == JSON.stringify(expect) and String(dg.room_view.room_id) == Achievements.daily_start_room(today), "Daily Shift plays today's seeded shift")
 	dg.free()
 	GameManager.daily_mode = false
+
+
+func _test_v05_ads() -> void:
+	print("\n--- 22. v0.5 AdMob: rewarded, interstitial cadence, banner ---")
+	_assert(AdManager.REWARDED_UNIT_ID == "ca-app-pub-7279753852255468/8204090272", "Rewarded unit is DTP_Rewarded")
+	_assert(AdManager.INTERSTITIAL_UNIT_ID == "ca-app-pub-7279753852255468/6891008607", "Interstitial unit is DTP_Interstitial")
+	_assert(AdManager.BANNER_UNIT_ID == "ca-app-pub-7279753852255468/9599886240", "Banner unit is DTP_Banner")
+	_assert(AdManager.ADMOB_APP_ID == "ca-app-pub-7279753852255468~6806201948", "AdMob app ID is Duct Tape Protocol")
+
+	# Timing: never mid-shift, first one after 3 shifts, then at least 3 minutes apart.
+	_assert(AdManager.interstitial_due(3, 180, false), "Interstitial due after 3 finished shifts")
+	_assert(not AdManager.interstitial_due(2, 0, false), "No interstitial before 3 finished shifts")
+	_assert(not AdManager.interstitial_due(3, 0, true), "No interstitial mid-shift")
+	_assert(not AdManager.interstitial_due(3, 179, false), "Respects the 3-minute gap between interstitials")
+	_assert(AdManager.interstitial_due(4, 180, false), "Due again after the gap")
+
+	# Cadence survives a relaunch (small state file, separate from the player save).
+	AdManager.state_path = "user://test_ads_state.json"
+	AdManager.reset_cadence(false)
+	AdManager.note_shift_finished()
+	AdManager.note_shift_finished()
+	_assert(AdManager.get_shifts_since_interstitial() == 2, "Finished shifts are counted for the cadence")
+	var state_file := FileAccess.open(AdManager.state_path, FileAccess.READ)
+	var saved: Dictionary = {}
+	if state_file:
+		var parsed: Variant = JSON.parse_string(state_file.get_as_text())
+		state_file.close()
+		if typeof(parsed) == TYPE_DICTIONARY:
+			saved = parsed
+	_assert(int(saved.get("shifts_since_interstitial", -1)) == 2, "Ad cadence is persisted between launches")
+	AdManager.reset_cadence()
+
+	# Outside Android, a short simulation keeps the button/test flow working (never on device).
+	_assert(AdManager.is_dev_simulation(), "Editor/desktop/Web use the dev ad simulation")
+	_assert(AdManager.is_ads_ready() and AdManager.is_ad_available(), "Dev simulation makes the rewarded button available")
+	_assert(AdManager.rewarded_button_text("WATCH").ends_with("[DEV SIM]"), "Dev builds label simulated ads")
+	_assert(not AdManager.is_banner_enabled(), "Banner defaults to off (menu stays clean)")
+	_assert(not AdManager.has_privacy_options(), "No UMP privacy entry point outside Android")
+
+	var granted: Array[int] = [0]
+	var cancelled: Array[int] = [0]
+	var completed: Array = []
+	var on_completed := func(pid: String, rewarded: bool, dev: bool) -> void:
+		completed.append([pid, rewarded, dev])
+	AdManager.ad_completed.connect(on_completed)
+	AdManager.request_rewarded_ad(
+		"results_double_scrap",
+		func() -> void: granted[0] += 1,
+		func() -> void: cancelled[0] += 1,
+		0.0
+	)
+	AdManager.ad_completed.disconnect(on_completed)
+	_assert(granted[0] == 1 and cancelled[0] == 0, "Rewarded simulation grants the reward exactly once")
+	_assert(
+		completed.size() == 1 and bool(completed[0][1]) and String(completed[0][0]) == "results_double_scrap",
+		"The rewarded completion signal carries the placement and the granted reward"
+	)
+	_assert(AdManager.is_ad_available(), "The rewarded button is usable again after the ad")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(AdManager.state_path))
+	AdManager.state_path = AdManager.ADS_STATE_PATH
