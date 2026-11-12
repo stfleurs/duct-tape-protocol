@@ -26,8 +26,9 @@ func _ready() -> void:
 	_build_ui()
 	# No-op unless ENABLE_BANNER is on (the menu reserves room for it below).
 	AdManager.show_banner()
-	# Cold start / return to the menu: app-open ad (never on first launch or mid-shift).
-	AdManager.maybe_show_app_open()
+	# Cold start only: app-open ad (never on first install launch, never when coming back to the
+	# menu from a shift or another screen; returns from the background are handled by AdManager).
+	AdManager.maybe_show_app_open_on_cold_start()
 
 func _build_ui() -> void:
 	# Reserve a strip above the bottom edge when the optional menu banner is enabled.

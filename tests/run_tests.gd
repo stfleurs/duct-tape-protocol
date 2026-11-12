@@ -1071,5 +1071,29 @@ func _test_v05_ads() -> void:
 	)
 	_assert(AdManager.is_ad_available(), "The rewarded button is usable again after the ad")
 
+	# vc6 fixes: a rewarded ad still loading is dropped when the results screen is left, so it can't
+	# appear over the ship map / next shift, and no reward or cancel callback reaches a freed screen.
+	var late_granted: Array[int] = [0]
+	var late_cancelled: Array[int] = [0]
+	AdManager.request_rewarded_ad(
+		"results_double_scrap",
+		func() -> void: late_granted[0] += 1,
+		func() -> void: late_cancelled[0] += 1,
+		5.0
+	)
+	_assert(not AdManager.is_ad_available(), "A rewarded ad in progress blocks a second one")
+	AdManager.cancel_pending_rewarded()
+	_assert(AdManager.is_ad_available(), "Leaving the results screen drops a rewarded ad that is still loading")
+	_assert(late_granted[0] == 0 and late_cancelled[0] == 0, "A dropped rewarded ad grants nothing and calls nothing back")
+	AdManager._complete_simulated_reward()
+	_assert(late_granted[0] == 0, "A late simulated finish after the drop still grants nothing")
+	_assert(AdManager.ads_supported(), "Debug desktop build supports (simulated) ads")
+
+	# App-open only on a real return from the background (not the notification shade or our own ads).
+	_assert(not AdManager.returned_from_background(-1, false), "Cold start RESUMED without a PAUSED is not a return")
+	_assert(not AdManager.returned_from_background(5 * 1000, false), "A few seconds away (shade, dialog) is not a return")
+	_assert(AdManager.returned_from_background(60 * 1000, false), "A minute in the background is a return")
+	_assert(not AdManager.returned_from_background(60 * 1000, true), "Closing one of our own full-screen ads is not a return")
+
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(AdManager.state_path))
 	AdManager.state_path = AdManager.ADS_STATE_PATH
