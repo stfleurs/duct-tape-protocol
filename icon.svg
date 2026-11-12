@@ -15,5 +15,4 @@
   <circle cx="118" cy="122" r="28" fill="#8d6346" stroke="#1b1b24" stroke-width="8"/>
   <circle cx="118" cy="122" r="16" fill="#2a164d"/>
   <path d="M168 92 L204 188 L156 198 L138 148 Z" fill="url(#tape)" stroke="#1b1b24" stroke-width="10" stroke-linejoin="round"/>
-  <circle cx="192" cy="64" r="22" fill="#00f0ff" opacity="0.85" stroke="#ffffff" stroke-width="4"/>
 </svg>
