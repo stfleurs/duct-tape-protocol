@@ -14,7 +14,7 @@ done from inside the repository.
 | App open — `DTP_AppOpen` | `ca-app-pub-7279753852255468/6821504651` |
 | Banner — `DTP_Banner` | `ca-app-pub-7279753852255468/9599886240` (code present, disabled) |
 | Plugin | Poing Studios Godot AdMob v5.0.0, vendored in `addons/admob/` |
-| Android SDK | min 24, target 36, compile 36, arm64-v8a only, Gradle build on |
+| Android SDK | min 24, target 36, compile 36, arm64-v8a + armeabi-v7a (same as vc5), Gradle build on |
 
 Where the settings live:
 
