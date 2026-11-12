@@ -55,7 +55,8 @@ const INTERSTITIAL_RETRY_SEC: float = 60.0
 const SDK_INIT_FALLBACK_SEC: float = 8.0
 const CONSENT_FALLBACK_SEC: float = 6.0
 
-## Desktop/editor/Web may simulate ads (tests, UI work). Android/iOS never simulate.
+## Desktop/editor/Web DEBUG builds may simulate ads (tests, UI work). Android/iOS and every release
+## build never simulate, so a release Web/desktop export never hands out a free "ad" reward.
 const ALLOW_DEV_SIMULATION: bool = true
 ## Consent debug tools (EEA form testing). Leave off for release builds.
 const DEBUG_EEA_CONSENT: bool = false
@@ -82,6 +83,7 @@ var _rewarded_pending_reward: Callable = Callable()
 var _rewarded_pending_cancel: Callable = Callable()
 var _reward_listener: OnUserEarnedRewardListener = null
 var _rewarded_content_callback: FullScreenContentCallback = null
+var _rewarded_showing: bool = false
 
 var _interstitial_ad: InterstitialAd = null
 var _interstitial_loading: bool = false
@@ -94,6 +96,8 @@ var _app_open_retry_scheduled: bool = false
 var _app_open_show_requested: bool = false
 var _app_open_launch_count: int = 0
 var _suppress_app_open_until_unix: int = 0
+var _cold_start_app_open_checked: bool = false
+var _backgrounded_at_msec: int = -1
 
 var _banner_ad: AdView = null
 var _banner_listener: AdListener = null
@@ -114,6 +118,7 @@ func _ready() -> void:
 	_native_available = Engine.has_singleton("PoingGodotAdMob")
 	_is_dev_simulation = (
 		ALLOW_DEV_SIMULATION
+		and OS.is_debug_build()
 		and not _native_available
 		and OS.get_name() != "Android"
 		and OS.get_name() != "iOS"
@@ -124,18 +129,28 @@ func _ready() -> void:
 		_app_open_launch_count += 1
 		_save_state()
 		call_deferred("_initialize_native_ads")
-	else:
-		# Editor / desktop / Web: no consent popup, no SDK, just the local simulation.
+	elif _is_dev_simulation:
+		# Editor / desktop / Web debug: no consent popup, no SDK, just the local simulation.
 		_ads_ready = true
 		_can_request_ads = true
 		_consent_resolved = true
 		ads_ready_changed.emit(true)
 		consent_status_changed.emit(true)
+	# Otherwise (release Web/desktop, or Android without the plugin): no ads at all.
 
 func _notification(what: int) -> void:
-	# Android sends this when the player returns from the launcher, another app or an ad click.
-	if what == NOTIFICATION_APPLICATION_FOCUS_IN and is_inside_tree():
-		call_deferred("maybe_show_app_open")
+	# App-open ads belong to a real return from the background (home screen, another app). FOCUS_IN
+	# also fires after the notification shade, a system dialog, the consent form or our own
+	# full-screen ads, so only PAUSED -> RESUMED counts, and only after a real stay in background.
+	if what == NOTIFICATION_APPLICATION_PAUSED:
+		_backgrounded_at_msec = Time.get_ticks_msec()
+	elif what == NOTIFICATION_APPLICATION_RESUMED and is_inside_tree():
+		var away_msec: int = (
+			Time.get_ticks_msec() - _backgrounded_at_msec if _backgrounded_at_msec >= 0 else -1
+		)
+		_backgrounded_at_msec = -1
+		if returned_from_background(away_msec, _ad_in_progress):
+			call_deferred("maybe_show_app_open")
 
 func _exit_tree() -> void:
 	_destroy_banner()
@@ -154,6 +169,11 @@ func is_ad_available(_placement_id: String = "results_double_scrap") -> bool:
 	if _ad_in_progress:
 		return false
 	return is_ads_ready()
+
+## False when this build has no ad SDK at all (release Web/desktop, or Android without the
+## plugin). The results screen hides the rewarded button then instead of showing a dead one.
+func ads_supported() -> bool:
+	return _is_dev_simulation or _native_available
 
 func is_ads_ready() -> bool:
 	if _is_dev_simulation:
@@ -209,6 +229,16 @@ func request_rewarded_ad(
 	else:
 		_load_rewarded(true)
 
+## The screen that asked for the rewarded ad is going away (NEXT/RETRY/back). If the ad is still
+## loading, drop the request so it can't pop up later over the ship map or a new shift.
+## No-op once the ad is on screen (the reward callback then still fires normally).
+func cancel_pending_rewarded() -> void:
+	if not _ad_in_progress or _rewarded_showing or _interstitial_pending_done.is_valid():
+		return
+	if _rewarded_pending_reward.is_valid() or _rewarded_pending_cancel.is_valid():
+		_rewarded_pending_cancel = Callable()
+		_finish_rewarded(false)
+
 ## Natural-break interstitial. on_done() always runs (immediately when no ad is shown), so callers
 ## can safely navigate after it. Never call this during a shift.
 func show_interstitial_then(on_done: Callable) -> void:
@@ -235,7 +265,22 @@ func note_shift_finished() -> void:
 func is_app_open_enabled() -> bool:
 	return ENABLE_APP_OPEN
 
-## Called when the menu is ready and when the app returns to the foreground. The actual decision is
+## Called by the main menu. Only the first menu of this process (the cold start) may show an
+## app-open ad; coming back to the menu from a shift or the badges screen never does.
+func maybe_show_app_open_on_cold_start() -> void:
+	if _cold_start_app_open_checked:
+		return
+	_cold_start_app_open_checked = true
+	maybe_show_app_open()
+
+## Pure policy helper (also used by the tests): did the player really leave the app?
+const APP_OPEN_MIN_BACKGROUND_MSEC: int = 30 * 1000
+static func returned_from_background(away_msec: int, full_screen_ad_open: bool) -> bool:
+	if full_screen_ad_open:
+		return false
+	return away_msec >= APP_OPEN_MIN_BACKGROUND_MSEC
+
+## Called on a cold start and when the app returns to the foreground. The actual decision is
 ## deferred until consent/SDK are ready so a cold start can still show the app-open ad.
 func maybe_show_app_open() -> void:
 	if not ENABLE_APP_OPEN:
@@ -471,6 +516,11 @@ func _show_rewarded() -> void:
 	if _rewarded_ad == null:
 		_finish_rewarded(false)
 		return
+	# Never put an ad over gameplay: if a shift started while the ad was loading, drop it.
+	if GameManager.is_in_active_shift:
+		_finish_rewarded(false)
+		return
+	_rewarded_showing = true
 
 	_note_full_screen_ad_shown()
 	_reward_listener = OnUserEarnedRewardListener.new()
@@ -500,6 +550,8 @@ func _on_rewarded_dismissed() -> void:
 	_finish_rewarded(_rewarded_granted)
 
 func _complete_simulated_reward() -> void:
+	if not _ad_in_progress:
+		return # cancelled (the results screen was left) before the simulated ad finished
 	_rewarded_granted = true
 	var reward := _rewarded_pending_reward
 	_rewarded_pending_reward = Callable()
@@ -512,13 +564,14 @@ func _finish_rewarded(granted: bool) -> void:
 	_rewarded_pending_cancel = Callable()
 	_rewarded_pending_reward = Callable()
 	_ad_in_progress = false
+	_rewarded_showing = false
 
 	if _rewarded_ad != null:
 		_rewarded_ad.destroy()
 		_rewarded_ad = null
 	_rewarded_content_callback = null
 	_reward_listener = null
-	_rewarded_loading = false
+	# Leave _rewarded_loading alone: a load still in flight finishes and is cached for next time.
 
 	ad_completed.emit(_rewarded_placement, granted, _is_dev_simulation)
 	if not granted:

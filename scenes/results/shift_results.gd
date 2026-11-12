@@ -114,7 +114,7 @@ func _build_ui() -> void:
 	)
 	add_child(retry_btn)
 
-	# Rewarded ad: 2x the scrap from this shift. Label says [DEV SIM] only outside Android.
+	# Rewarded ad: 2x the scrap from this shift. Label says [DEV SIM] only in debug builds off-device.
 	_ad_btn = Button.new()
 	_ad_btn.text = AdManager.rewarded_button_text("▶ WATCH AD: 2X SCRAP")
 	_ad_btn.position = Vector2(110, 1138)
@@ -122,6 +122,8 @@ func _build_ui() -> void:
 	DuctTapeUI.style_pill_button(_ad_btn, DuctTapeUI.COLOR_GREEN_TOP, DuctTapeUI.COLOR_GREEN_BOT, 25, 40)
 	_ad_btn.pressed.connect(_on_watch_ad_pressed)
 	add_child(_ad_btn)
+	# No ad SDK in this build (release Web/desktop, Android without the plugin): no dead button.
+	_ad_btn.visible = AdManager.ads_supported()
 	AdManager.ads_ready_changed.connect(_on_ads_ready_changed)
 	_on_ads_ready_changed(AdManager.is_ads_ready())
 
@@ -193,6 +195,9 @@ func _leave_results(go: Callable) -> void:
 		AdManager.show_interstitial_then(go)
 
 func _exit_tree() -> void:
+	# A rewarded ad still loading must not pop up later over the ship map or the next shift.
+	if not _ad_claimed:
+		AdManager.cancel_pending_rewarded()
 	if AdManager.ads_ready_changed.is_connected(_on_ads_ready_changed):
 		AdManager.ads_ready_changed.disconnect(_on_ads_ready_changed)
 

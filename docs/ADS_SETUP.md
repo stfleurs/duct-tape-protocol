@@ -81,14 +81,18 @@ without a lawful basis.
 | `ENABLE_APP_OPEN` | `true` | App-open ad on cold start / foreground. |
 | `APP_OPEN_MIN_GAP_SEC` | `14400` (4 h) | Hard minimum between app-open ads; any other full-screen ad resets it. |
 | `APP_OPEN_CLICK_SUPPRESS_SEC` | `300` | Do not show an app-open ad right after the player returns from an ad click. |
-| `ALLOW_DEV_SIMULATION` | `true` | Editor/desktop/Web get a 1.2 s fake ad for UI work and tests. Android/iOS never simulate. |
+| `ALLOW_DEV_SIMULATION` | `true` | Editor/desktop/Web **debug** builds get a 1.2 s fake ad for UI work and tests. Android/iOS and all release builds never simulate (a release Web/desktop build hides the rewarded button). |
 | `DEBUG_EEA_CONSENT` | `false` | Force the EEA consent flow in debug builds. |
 
 Interstitials are only requested from the results screen's **NEXT**/**RETRY** handlers
 (`scenes/results/shift_results.gd`), never from gameplay, and are skipped after a rewarded ad in
-the same results screen. App-open ads are requested from `main_menu.gd` and on
-`NOTIFICATION_APPLICATION_FOCUS_IN`, but never on the first launch, during a shift or while another
-full-screen ad is open. The cadence is stored in `user://ads_state.json`, separate from the player
+the same results screen. App-open ads are requested once per process from the first
+`main_menu.gd` (cold start; never when coming back to the menu from a shift or another screen) and
+when the app comes back after at least 30 s in the background (`NOTIFICATION_APPLICATION_PAUSED` →
+`RESUMED`, so the notification shade or a system dialog does not count), but never on the first
+launch, during a shift or while another full-screen ad is open. A rewarded ad that is still loading
+when the player leaves the results screen is dropped, so it can't appear over the ship map or a
+new shift. The cadence is stored in `user://ads_state.json`, separate from the player
 save.
 
 ## 4. Android build requirements
