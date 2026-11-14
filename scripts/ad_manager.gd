@@ -111,6 +111,8 @@ var _shifts_since_interstitial: int = 0
 var _last_full_screen_ad_unix: int = 0
 
 func _ready() -> void:
+	if OS.has_feature("triage_preview"):
+		return # Isolated review export: no SDK init, consent requests or ad state writes.
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_load_state()
 
@@ -139,6 +141,8 @@ func _ready() -> void:
 	# Otherwise (release Web/desktop, or Android without the plugin): no ads at all.
 
 func _notification(what: int) -> void:
+	if OS.has_feature("triage_preview"):
+		return
 	# App-open ads belong to a real return from the background (home screen, another app). FOCUS_IN
 	# also fires after the notification shade, a system dialog, the consent form or our own
 	# full-screen ads, so only PAUSED -> RESUMED counts, and only after a real stay in background.
