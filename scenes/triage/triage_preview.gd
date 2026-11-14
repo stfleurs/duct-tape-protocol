@@ -4,6 +4,8 @@ var state := TriageState.new()
 var started: bool = false
 var between: bool = false
 var _dock: VBoxContainer
+var _tray: ColorRect
+const TRAY_H: float = 318.0
 var _cards: Dictionary = {}
 var _effect: Label
 var _effect_panel: PanelContainer
@@ -49,8 +51,14 @@ func _start_configured_shift() -> void:
 		pause_box.add_child(b)
 
 func _build_triage_ui() -> void:
+	# Opaque tray below the room: the room is laid out above it, so nothing playable sits under the notice or priority cards.
+	_tray = ColorRect.new()
+	_tray.color = Color(0.07, 0.04, 0.14, 1.0)
+	_tray.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_tray)
 	_dock = VBoxContainer.new()
 	_dock.add_theme_constant_override("separation", 8)
+	_dock.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_dock)
 	_effect = _hud_label("", 22, Color(1.0, 0.92, 0.70))
 	_effect.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -67,7 +75,7 @@ func _build_triage_ui() -> void:
 	_dock.add_child(_effect_panel)
 	for fid in ["pipe_leak", "overheating_engine", "vent_clogged", "sparking_panel"]:
 		var button := Button.new()
-		button.custom_minimum_size.y = 76
+		button.custom_minimum_size.y = 70
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		DuctTapeUI.style_pill_button(button, Color(0.22, 0.17, 0.37), Color(0.12, 0.08, 0.23), 23, 16)
 		button.pressed.connect(func() -> void: _focus_problem(fid))
@@ -80,8 +88,13 @@ func _layout() -> void:
 	_banner.size.y = 120
 	_banner_label.custom_minimum_size.y = 96
 	if _dock != null:
-		_dock.position = Vector2(16, size.y - 350)
-		_dock.size = Vector2(size.x - 32, 334)
+		_tray.position = Vector2(0, size.y - TRAY_H)
+		_tray.size = Vector2(size.x, TRAY_H)
+		_dock.position = Vector2(16, size.y - TRAY_H + 10.0)
+		_dock.size = Vector2(size.x - 32, TRAY_H - 14.0)
+		if room_view != null and absf(room_view.bottom_inset - TRAY_H) > 0.5:
+			room_view.bottom_inset = TRAY_H
+			room_view.layout_room(size)
 	if _modal != null:
 		_modal_card.position = Vector2(24, maxf(24.0, (size.y - _modal_card.size.y) * 0.5))
 		_modal_card.size.x = size.x - 48
