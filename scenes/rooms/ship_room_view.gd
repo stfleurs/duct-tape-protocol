@@ -26,6 +26,7 @@ var nadine: NadineCharacter
 var pristine: PristineHologram
 
 var top_inset: float = 100.0
+var bottom_inset: float = 0.0 # screen space reserved for an overlay tray, so no repair spot is placed under it
 var view_w: float = 720.0
 var view_h: float = 1280.0
 var room_w: float = 1440.0
@@ -198,7 +199,7 @@ func layout_room(sz: Vector2) -> void:
 		anchors = ShipRooms.get_anchors("engine_room")
 	view_w = sz.x
 	view_h = sz.y
-	room_h = maxf(400.0, view_h - top_inset)
+	room_h = maxf(400.0, view_h - top_inset - bottom_inset)
 	room_w = maxf(room_h * room_aspect(), view_w * 1.6)
 	element_scale = clampf(room_h / 1176.0, 1.0, 1.35)
 	var k: float = element_scale
@@ -1207,7 +1208,7 @@ func _draw_edge() -> void:
 			continue
 		var fd: FailureData = active_failures_by_anchor[anchor_id]["data"]
 		var left: bool = sp.x < 0.0
-		var y: float = clampf(sp.y, top_inset + 140.0, view_h - 200.0)
+		var y: float = clampf(sp.y, top_inset + 140.0, view_h - bottom_inset - 200.0)
 		var x: float = 46.0 if left else view_w - 46.0
 		var pulse: float = 1.0 + 0.12 * sin(_anim_time * 8.0)
 		var col := Color(1.0, 0.15, 0.12) if fd.urgent else Color(1.0, 0.62, 0.12)
@@ -1231,7 +1232,7 @@ func edge_arrow_at(pos: Vector2) -> String:
 		if sp.x > -20.0 and sp.x < view_w + 20.0:
 			continue
 		var left: bool = sp.x < 0.0
-		var y: float = clampf(sp.y, top_inset + 140.0, view_h - 200.0)
+		var y: float = clampf(sp.y, top_inset + 140.0, view_h - bottom_inset - 200.0)
 		var x: float = 46.0 if left else view_w - 46.0
 		if pos.distance_to(Vector2(x, y)) < 70.0:
 			return anchor_id
