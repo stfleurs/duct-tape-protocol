@@ -15,6 +15,7 @@ var _last_active: String = ""
 
 func _start_configured_shift() -> void:
 	# Reuse the real room, character and gestures, not a mock minigame.
+	if OS.has_feature("web"): JavaScriptBridge.eval("try{if(!window.__dtpg){window.__dtpg=1;Object.defineProperty(window,'devicePixelRatio',{get:function(){return 1;},configurable:true});window.dispatchEvent(new Event('resize'));var c=document.querySelector('canvas');if(c){c.addEventListener('webglcontextlost',function(e){if(!sessionStorage.getItem('dtpr')){sessionStorage.setItem('dtpr','1');setTimeout(function(){location.reload();},300);}});}}}catch(e){}")
 	var lvl: LevelData = GameManager.load_level_data("engine_room")
 	level_manager.setup_shift(lvl, [load("res://resources/tools/duct_tape.tres") as ToolData, load("res://resources/tools/wrench.tres") as ToolData], ShipRooms.load_all_failures())
 	level_manager.is_paused = true # this isolated director owns all encounter clocks
