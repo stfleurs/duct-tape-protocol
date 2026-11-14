@@ -373,8 +373,11 @@ func _draw_seal_meter(rc: RepairController, a: Vector2, k: float) -> void:
 		var tx: float = x + 4 + (w - 8) * float(i) / float(rc.required_steps)
 		draw_line(Vector2(tx, y + 4), Vector2(tx, y + h - 4), Color(1, 1, 1, 0.55), 2.0)
 	var label: String = rc.get_current_phase_prompt()
-	draw_string_outline(ThemeDB.fallback_font, Vector2(x - 120, y + h + 30), label, HORIZONTAL_ALIGNMENT_CENTER, w + 240, 24, 7, DuctTapeUI.COLOR_OUTLINE)
-	draw_string(ThemeDB.fallback_font, Vector2(x - 120, y + h + 30), label, HORIZONTAL_ALIGNMENT_CENTER, w + 240, 24, Color.WHITE)
+	# Keep the instruction readable when a priority card selects a prop near an edge.
+	var label_w: float = minf(w + 240.0, size.x - 24.0)
+	var label_x: float = clampf(x - 120.0, 12.0, size.x - label_w - 12.0)
+	draw_string_outline(ThemeDB.fallback_font, Vector2(label_x, y + h + 30), label, HORIZONTAL_ALIGNMENT_CENTER, label_w, 24, 7, DuctTapeUI.COLOR_OUTLINE)
+	draw_string(ThemeDB.fallback_font, Vector2(label_x, y + h + 30), label, HORIZONTAL_ALIGNMENT_CENTER, label_w, 24, Color.WHITE)
 
 ## Where the seal meter (bar + its prompt line) goes for a spot: below the prop, unless that covers
 ## Nadine — then above the prop, then beside it, then above her head. Returns the whole block.
