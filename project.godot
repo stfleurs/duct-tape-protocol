@@ -21,6 +21,8 @@ config/version="0.5.0"
 run/main_scene="res://scenes/main_menu/main_menu.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
+config/name.triage_preview="Duct Tape Protocol - Triage Preview"
+run/main_scene.triage_preview="res://scenes/triage/triage_preview.tscn"
 
 [autoload]
 
